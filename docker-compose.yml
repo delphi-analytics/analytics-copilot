@@ -1,0 +1,54 @@
+services:
+  # ─── Infrastructure ──────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: dvc
+      POSTGRES_PASSWORD: dvc_pass
+      POSTGRES_DB: dvc
+    ports: ["5433:5432"]
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dvc"]
+      interval: 10s
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6380:6379"]
+    command: redis-server --appendonly yes
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports: ["6333:6333"]
+    volumes: [qdrant_data:/qdrant/storage]
+    profiles: ["vector"]   # optional: docker compose --profile vector up
+
+  # ─── Backend ─────────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports: ["8001:8001"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://dvc:dvc_pass@postgres:5432/dvc
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes: [./uploads:/app/uploads]
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8001 --reload
+
+  # ─── Frontend ────────────────────────────────────────────────────────────────
+  frontend:
+    image: node:20-alpine
+    working_dir: /app
+    volumes: [./frontend:/app]
+    ports: ["5173:5173"]
+    command: sh -c "npm install && npm run dev -- --host"
+    environment:
+      VITE_API_URL: http://localhost:8001
+
+volumes:
+  postgres_data:
+  qdrant_data:

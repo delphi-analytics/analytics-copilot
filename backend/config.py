@@ -1,0 +1,65 @@
+from functools import lru_cache
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    # App
+    app_name: str = "Data Visualization Copilot"
+    app_env: str = "development"
+    debug: bool = True
+    secret_key: str = "change-me-in-production-32chars-min"
+    api_prefix: str = "/api/v1"
+
+    # Database (PostgreSQL — metadata, history, users)
+    database_url: str = "sqlite+aiosqlite:///./dvc.db"
+
+    # Redis
+    redis_url: str = "redis://localhost:6379/0"
+
+    # ClickHouse (Analytics DB — optional)
+    clickhouse_host: str = "localhost"
+    clickhouse_port: int = 8123
+    clickhouse_user: str = "default"
+    clickhouse_password: str = ""
+    clickhouse_database: str = "default"
+
+    # LLM Providers (via OpenRouter or direct)
+    groq_api_key: str = ""
+    anthropic_api_key: str = ""
+    openai_api_key: str = ""
+    gemini_api_key: str = ""
+    openrouter_api_key: str = ""
+
+    # Model routing
+    llm_fast_model: str = "groq/llama-3.1-8b-instant"        # Intent, routing decisions
+    llm_smart_model: str = "groq/llama-3.3-70b-versatile"    # SQL generation, insights
+    llm_premium_model: str = "anthropic/claude-sonnet-4-6"    # Complex analysis (paid)
+    llm_fallback_model: str = "groq/llama-3.1-8b-instant"
+
+    # Vector Memory (Qdrant)
+    qdrant_url: str = "http://localhost:6333"
+    qdrant_collection: str = "dvc_memory"
+    qdrant_enabled: bool = False   # off by default — uses in-memory fallback
+
+    # Integrations
+    slack_bot_token: str = ""
+    slack_signing_secret: str = ""
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+
+    # Query limits
+    max_rows_returned: int = 10000
+    query_timeout_seconds: int = 30
+    max_conversation_history: int = 20
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
+
+
+settings = get_settings()

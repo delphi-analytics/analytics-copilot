@@ -1,0 +1,89 @@
+import structlog
+from qdrant_client import QdrantClient
+from qdrant_client.http import models
+from fastembed import TextEmbedding
+from backend.config import settings
+
+log = structlog.get_logger(__name__)
+
+class VectorMemory:
+    def __init__(self):
+        self.enabled = settings.qdrant_enabled
+        self.client = None
+        self.embedding_model = None
+        self.collection_name = settings.qdrant_collection
+
+    def connect(self):
+        if not self.enabled:
+            return
+        if not self.client:
+            try:
+                self.client = QdrantClient(url=settings.qdrant_url)
+                self.embedding_model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
+                
+                # Check if collection exists
+                collections = self.client.get_collections().collections
+                if not any(c.name == self.collection_name for c in collections):
+                    self.client.create_collection(
+                        collection_name=self.collection_name,
+                        vectors_config=models.VectorParams(
+                            size=384, # BAAI/bge-small-en-v1.5 dim
+                            distance=models.Distance.COSINE
+                        )
+                    )
+                log.info("qdrant.connected", url=settings.qdrant_url)
+            except Exception as e:
+                log.error("qdrant.connection_failed", error=str(e))
+                self.enabled = False
+
+    def embed_text(self, text: str) -> list[float]:
+        if not self.embedding_model:
+            return []
+        embeddings = list(self.embedding_model.embed([text]))
+        return embeddings[0].tolist()
+
+    def store_query(self, user_id: str, question: str, sql: str, payload: dict):
+        if not self.client and self.enabled:
+            self.connect()
+        if not self.enabled:
+            return
+
+        try:
+            vector = self.embed_text(question)
+            payload["user_id"] = user_id
+            payload["question"] = question
+            payload["sql"] = sql
+            
+            self.client.upsert(
+                collection_name=self.collection_name,
+                points=[
+                    models.PointStruct(
+                        id=hash(question) % ((1<<63)-1), # simple ID
+                        vector=vector,
+                        payload=payload
+                    )
+                ]
+            )
+        except Exception as e:
+            log.error("qdrant.store_failed", error=str(e))
+
+    def search_similar_queries(self, question: str, limit: int = 3) -> list[dict]:
+        if not self.client and self.enabled:
+            self.connect()
+        if not self.enabled:
+            return []
+
+        try:
+            vector = self.embed_text(question)
+            results = self.client.search(
+                collection_name=self.collection_name,
+                query_vector=vector,
+                limit=limit,
+                score_threshold=0.85
+            )
+            return [res.payload for res in results]
+        except Exception as e:
+            log.error("qdrant.search_failed", error=str(e))
+            return []
+
+vector_memory = VectorMemory()
