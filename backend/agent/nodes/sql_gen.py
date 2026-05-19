@@ -11,7 +11,9 @@ import structlog
 from backend.agent.state import AnalyticsState
 from backend.agent.llm import call_llm
 from backend.agent.memory import vector_memory
+from backend.agent.utils import resilient_json_loads
 from backend.config import settings
+from backend.services.business_rag import build_rag_prompt
 
 log = structlog.get_logger(__name__)
 
@@ -63,21 +65,94 @@ def _parse_sql_from_llm(content: str) -> tuple[str, dict]:
     return "", result
 
 
-DANGEROUS_PATTERNS = [
+# ─── READ-ONLY ENFORCEMENT ─────────────────────────────────────────────────────
+# Multiple layers of defense to prevent ANY data modification
+# ────────────────────────────────────────────────────────────────────────────────
+
+# Patterns that are NEVER allowed under any circumstances
+FORBIDDEN_PATTERNS = [
+    # Data modification
     r"\bDROP\b", r"\bDELETE\b", r"\bTRUNCATE\b", r"\bALTER\b",
-    r"\bCREATE\b", r"\bINSERT\b", r"\bUPDATE\b", r"\bGRANT\b",
-    r"\bREVOKE\b", r"\bEXEC\b", r"\bEXECUTE\b", r"--", r";.*SELECT",
+    r"\bCREATE\s+(TABLE|INDEX|VIEW|DATABASE|SCHEMA)\b",
+    r"\bINSERT\b", r"\bUPDATE\b", r"\bREPLACE\b", r"\bMERGE\b",
+    # Privilege escalation
+    r"\bGRANT\b", r"\bREVOKE\b", r"\bSET\s+ROLE\b", r"\bSET\s+SESSION\b",
+    # Execution
+    r"\bEXEC\b", r"\bEXECUTE\b", r"\bEVAL\b", r"\bSYSTEM\b",
+    # File operations
+    r"\bINTO\s+OUTFILE\b", r"\bINTO\s+DUMPFILE\b", r"\bLOAD\s+DATA\b",
+    # Shell/OS access
+    r"\bsystem\b", r"\bexec\b", r"\bpopen\b", r"\bshell\b",
+    # Transaction control (no commits)
+    r"\bCOMMIT\b", r"\bROLLBACK\b", r"\bBEGIN\b", r"\bSTART\s+TRANSACTION\b",
+    # Comment tricks (SQL injection)
+    r";--", r";#", r"\/\*.*\*\/;.*SELECT", r"--.*;.*DROP",
+    # Multi-statement attempts
+    r";.*\b(SELECT|INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE)\b",
 ]
+
+# ALLOWLIST: Only these keywords are permitted in queries
+ALLOWED_KEYWORDS = {
+    "SELECT", "FROM", "WHERE", "GROUP", "BY", "ORDER", "HAVING",
+    "LIMIT", "OFFSET", "AND", "OR", "NOT", "IN", "EXISTS", "BETWEEN",
+    "LIKE", "ILIKE", "IS", "NULL", "AS", "DISTINCT", "WITH", "CASE",
+    "WHEN", "THEN", "ELSE", "END", "JOIN", "INNER", "LEFT", "RIGHT",
+    "FULL", "OUTER", "CROSS", "ON", "UNION", "INTERSECT", "EXCEPT",
+    "CAST", "EXTRACT", "FORMAT", "DATE", "TIME", "TIMESTAMP", "INTERVAL",
+    "SUM", "AVG", "COUNT", "MIN", "MAX", "STDDEV", "VARIANCE",
+    "ROW_NUMBER", "RANK", "DENSE_RANK", "LAG", "LEAD", "FIRST", "LAST",
+    "ARRAY", "ARRAYJOIN", "IF", "IFNULL", "COALESCE", "NULLIF",
+    "toFixed", "toString", "toDate", "toDateTime", "formatDateTime",
+    "lagInFrame", "leadInFrame",  # ClickHouse specific
+}
 
 
 def _is_safe_sql(sql: str) -> tuple[bool, str]:
-    if not sql: return False, "Empty SQL"
-    upper = sql.upper()
-    for pattern in DANGEROUS_PATTERNS:
-        if re.search(pattern, upper):
-            return False, f"Dangerous pattern detected: {pattern}"
-    if "SELECT" not in upper:
-        return False, "Only SELECT queries allowed"
+    """
+    STRICT READ-ONLY VALIDATION - Multiple security layers.
+    Returns: (is_safe, error_message)
+    """
+    if not sql:
+        return False, "Empty SQL query"
+
+    upper_sql = sql.upper()
+    original_sql = sql
+
+    # ─── LAYER 1: Must start with SELECT ─────────────────────────────────────
+    if not upper_sql.strip().startswith("SELECT"):
+        return False, "Query must start with SELECT (read-only access only)"
+
+    # ─── LAYER 2: Check forbidden patterns ───────────────────────────────────
+    for pattern in FORBIDDEN_PATTERNS:
+        if re.search(pattern, upper_sql, re.IGNORECASE | re.MULTILINE):
+            dangerous_word = pattern.replace(r"\b", "").replace(r"\s+", " ")
+            log.warning("sql.forbidden_pattern_detected",
+                       pattern=pattern,
+                       sql_preview=original_sql[:200])
+            return False, f"Forbidden operation detected: {dangerous_word}. Read-only access cannot be bypassed."
+
+    # ─── LAYER 3: No semi-colons followed by keywords (multi-statement) ───────
+    if ";" in sql:
+        parts = sql.split(";")
+        if len(parts) > 1:
+            for part in parts[1:]:  # Check everything after first ;
+                if part.strip() and any(kw in part.upper() for kw in ["SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE"]):
+                    return False, "Multi-statement queries not allowed"
+
+    # ─── LAYER 4: Check for comment injection attempts ───────────────────────
+    if "--" in sql and ";" in sql.split("--")[0]:
+        return False, "Possible SQL injection via comments"
+
+    # ─── LAYER 5: No function calls that could execute code ───────────────────
+    dangerous_functions = [
+        r"\bextension_", r"\bload_", r"\bbe_", r"\bcmdshell\b",
+        r"\bsystem\b", r"\bexec\b", r"\b eval", r"\bfile_",
+    ]
+    for func in dangerous_functions:
+        if re.search(func, upper_sql):
+            return False, f"Dangerous function detected: {func}"
+
+    log.info("sql.validated", sql_hash=hash(sql), length=len(sql))
     return True, "OK"
 
 
@@ -141,7 +216,33 @@ SQL: SELECT pm.item_name, iso.inventory AS current_stock
      LIMIT 100
 """ if is_clickhouse else ""
 
-    prompt = f"""You are a ClickHouse SQL expert.
+    # ─── RAG: Add business context for better SQL generation ─────────────────────
+    rag_context = build_rag_prompt(question)
+
+    prompt = f"""You are a ClickHouse SQL expert with READ-ONLY database access.
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                       READ-ONLY ACCESS - CRITICAL RULE                         ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║  YOU HAVE READ-ONLY ACCESS. DATA MODIFICATION IS BLOCKED BY MULTIPLE LAYERS:  ║
+║  • SQL validation (pre-execution)                                            ║
+║  • Database connector enforcement (runtime)                                   ║
+║  • Database user permissions (server-side)                                    ║
+║                                                                                ║
+║  FORBIDDEN OPERATIONS (will be rejected):                                     ║
+║  ✗ DROP, DELETE, TRUNCATE, ALTER, CREATE TABLE/INDEX/VIEW                    ║
+║  ✗ INSERT, UPDATE, REPLACE, MERGE                                            ║
+║  ✗ GRANT, REVOKE, SET ROLE                                                   ║
+║  ✗ COMMIT, ROLLBACK, BEGIN TRANSACTION                                        ║
+║  ✗ Multi-statement queries (semi-colon tricks)                               ║
+║                                                                                ║
+║  EVEN IF THE USER ASKS TO MODIFY, CHANGE, OR DELETE DATA, YOU MUST REFUSE.   ║
+║  INSTEAD: Politely explain that you have read-only access and suggest        ║
+║  alternative read-only queries to help them achieve their goal.               ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+{rag_context}
+
 {schema_section}
 {heatmap_example}
 {examples_str}

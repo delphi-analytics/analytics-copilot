@@ -20,15 +20,33 @@ from backend.agent.nodes.executor import execute_sql
 from backend.agent.nodes.analyst import analyze_insights
 from backend.agent.nodes.viz_config import generate_viz_config
 from backend.agent.nodes.responder import compose_response
+from backend.agent.nodes.insight_followup import handle_insight_followup, _is_insight_followup
 
 log = structlog.get_logger(__name__)
 
 
 def _should_skip_sql(state: AnalyticsState) -> str:
-    """Route: skip SQL generation for greetings or export requests."""
+    """Route: skip SQL generation for greetings, analytical questions, or export requests."""
+    # Check if pre-filter already handled this
+    if state.get("skip_pipeline"):
+        return "skip_to_respond"
+
     intent_type = state.get("intent", {}).get("type", "")
+    question = state.get("user_question", "")
+    history = state.get("conversation_history", [])
+
+    # Check for insight follow-up (e.g., "why is this happening?")
+    if _is_insight_followup(question, history):
+        return "insight_followup"
+
+    # Analytical questions need data but different treatment
+    if intent_type == "analytical_question":
+        return "generate_sql"  # Still get data, but respond differently
+
+    # Skip for greetings or export requests
     if intent_type in ("greeting", "export_request"):
         return "skip_to_respond"
+
     return "generate_sql"
 
 
@@ -45,7 +63,7 @@ def build_graph() -> StateGraph:
     """Build and compile the LangGraph pipeline."""
     graph = StateGraph(AnalyticsState)
 
-    # Register all 7 nodes
+    # Register all 7 nodes + insight follow-up
     graph.add_node("understand_intent", understand_intent)
     graph.add_node("discover_schema", discover_schema)
     graph.add_node("generate_sql", generate_sql)
@@ -53,6 +71,7 @@ def build_graph() -> StateGraph:
     graph.add_node("analyze_insights", analyze_insights)
     graph.add_node("generate_viz_config", generate_viz_config)
     graph.add_node("compose_response", compose_response)
+    graph.add_node("insight_followup", handle_insight_followup)
 
     # Entry point
     graph.set_entry_point("understand_intent")
@@ -64,6 +83,7 @@ def build_graph() -> StateGraph:
         {
             "generate_sql": "discover_schema",
             "skip_to_respond": "compose_response",
+            "insight_followup": "insight_followup",
         }
     )
     graph.add_edge("discover_schema", "generate_sql")
@@ -71,6 +91,7 @@ def build_graph() -> StateGraph:
     graph.add_edge("execute_sql", "analyze_insights")
     graph.add_edge("analyze_insights", "generate_viz_config")
     graph.add_edge("generate_viz_config", "compose_response")
+    graph.add_edge("insight_followup", "compose_response")
     graph.add_edge("compose_response", END)
 
     return graph.compile()
