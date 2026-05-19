@@ -51,7 +51,7 @@ async def compose_response(state: AnalyticsState) -> AnalyticsState:
         import re
         return re.sub(r'\$\s?([\d,]+(?:\.\d+)?)', lambda m: f'₹{m.group(1)}', str(v))
 
-    insights_text = "\n".join(f"• {_inr(i)}" for i in insights[:3]) if insights else ""
+    insights_text = "\n".join(f"* {_inr(i)}" for i in insights[:3]) if insights else ""
     metrics_text = " | ".join(f"**{k}**: {_inr(v)}" for k, v in list(key_metrics.items())[:4]) if key_metrics else ""
     anomaly_text = f"\n⚠️ Notable: {anomalies[0]}" if anomalies else ""
 

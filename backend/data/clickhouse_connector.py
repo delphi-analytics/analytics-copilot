@@ -179,7 +179,7 @@ TABLE_DESCRIPTIONS = {
         "order_quantity (units sold that day), gross_sales_rs (daily revenue), "
         "sp (selling price), mrp, cogs, burn_period (fixed at 90 days). "
         "Current stock: Skincare=1,693 units/632 SKUs, Makeup=476 units/334 SKUs, Haircare=39 units. "
-        "For CURRENT inventory: WHERE date = (SELECT max(date) FROM inventory_sales_overview_new). "
+        "For CURRENT inventory: WHERE date = (SELECT max(date) FROM inventory_sales_overview_new WHERE inventory > 0). "
         "For LOW STOCK: WHERE inventory < 100 AND inventory > 0. "
         "For OOS: WHERE inventory = 0."
     ),

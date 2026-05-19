@@ -106,6 +106,7 @@ async def generate_sql(state: AnalyticsState) -> AnalyticsState:
     examples_str = ""
     if similar_queries:
         examples_str = "\nPAST EXAMPLES:\n" + "\n".join([f"Q: {q['question']}\nSQL: {q['sql']}" for q in similar_queries])
+        examples_str += "\n\nWARNING: Past examples are for reference only. If the user asks for a DIFFERENT metric or calculation (e.g., 'average' instead of 'total', or 'growth' instead of 'trend'), DO NOT blindly copy the past example. You MUST adjust the SQL functions (e.g. use AVG instead of SUM, or compute differences) to answer the specific user question."
 
     heatmap_example = """
 EXAMPLE (Heatmap of Platform vs Month):
@@ -116,12 +117,46 @@ SQL: SELECT sales_platform, formatDateTime(date_created, '%Y-%m') AS month, sum(
      GROUP BY sales_platform, month
      ORDER BY month ASC, revenue DESC
      LIMIT 500
+
+EXAMPLE (Month-over-month growth / Window Functions):
+Question: "Monthly sales growth trend"
+SQL: SELECT month, revenue, revenue - lagInFrame(revenue) OVER (ORDER BY month) AS revenue_growth
+     FROM (
+         SELECT formatDateTime(date_created, '%Y-%m') AS month, sum(row_subtotal) AS revenue
+         FROM combined_sales_final
+         WHERE final_status NOT IN ('cancelled','returned')
+         GROUP BY month
+     )
+     ORDER BY month ASC
+     LIMIT 500
+
+EXAMPLE (Current low stock levels / inventory):
+Question: "Which products are low on inventory right now?"
+SQL: SELECT pm.item_name, iso.inventory AS current_stock
+     FROM inventory_sales_overview_new iso
+     LEFT JOIN product_master pm ON iso.sku = pm.internal_sku
+     WHERE iso.date = (SELECT max(date) FROM inventory_sales_overview_new WHERE inventory > 0)
+       AND iso.inventory < 100 AND iso.inventory > 0
+     ORDER BY current_stock ASC
+     LIMIT 100
 """ if is_clickhouse else ""
 
     prompt = f"""You are a ClickHouse SQL expert.
 {schema_section}
 {heatmap_example}
 {examples_str}
+
+CRITICAL WINDOW FUNCTION RULES:
+1. ClickHouse does NOT support standard lag() or lead() window functions. It throws "Unknown aggregate function lag".
+2. You MUST use lagInFrame() instead of lag() and leadInFrame() instead of lead() when writing window queries.
+   Example: lagInFrame(revenue) OVER (ORDER BY month)
+
+CRITICAL QUERY RULES FOR QUALITATIVE QUESTIONS:
+1. If the user asks for "reasons", "causes", "factors", or "drivers" of a sales decline, growth, or trend:
+   - DO NOT just write a query that pulls a simple overall monthly trend over time.
+   - Instead, write a query that breaks down the sales/revenue by key categorical dimensions (e.g., sales_platform, brand, or product category_l1 from product_master) over the relevant time period.
+   - For example, query the sales breakdown by platform and brand, or platform and month, to enable the downstream analyst to see exactly which platforms, brands, or categories are driving the drop or change.
+
 User question: "{question}"
 
 Return ONLY this JSON:

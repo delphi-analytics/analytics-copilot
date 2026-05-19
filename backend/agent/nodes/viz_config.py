@@ -23,18 +23,171 @@ CHART_TYPE_MAP = {
 }
 
 
-def _build_bar_chart(columns: list, rows: list, title: str) -> dict:
-    """Build bar chart config directly from data — fast path."""
-    if len(columns) < 2:
+def _pivot_and_build_multi_series(columns: list, rows: list, title: str, chart_type: str = "bar") -> dict:
+    """
+    Pivot multi-dimensional query results into a multi-series ECharts option.
+    Handles:
+    - Multiple numeric columns (e.g. month, skincare, makeup) -> One series per numeric column.
+    - Two categorical + one numeric (e.g. platform, month, revenue) -> Pivots to unique platforms as series, months on X-axis.
+    """
+    if not columns or not rows:
         return {}
-    x_col, y_col = columns[0], columns[1]
+
+    # 1. Classify columns
+    num_cols = []
+    str_cols = []
+    
+    for col in columns:
+        is_num = True
+        has_val = False
+        for r in rows[:20]:
+            val = r.get(col) if isinstance(r, dict) else None
+            if val is not None and val != "":
+                has_val = True
+                try:
+                    float(str(val).replace(',', '').replace('₹', '').replace('$', '').strip())
+                except ValueError:
+                    is_num = False
+                    break
+        if is_num and has_val:
+            num_cols.append(col)
+        else:
+            str_cols.append(col)
+
+    if not num_cols:
+        num_cols = [c for c in columns[1:]]
+        str_cols = [columns[0]]
+    if not str_cols:
+        str_cols = [columns[0]]
+        num_cols = [c for c in columns[1:]]
+
+    # --- CASE 1: Multiple numeric columns ---
+    if len(str_cols) == 1 and len(num_cols) >= 1:
+        x_col = str_cols[0]
+        x_data = []
+        seen_x = set()
+        for r in rows:
+            val = str(r.get(x_col, "") if isinstance(r, dict) else r[0])
+            if val not in seen_x:
+                seen_x.add(val)
+                x_data.append(val)
+        
+        series_list = []
+        for n_col in num_cols:
+            y_data = []
+            for x_val in x_data:
+                row_val = 0
+                for r in rows:
+                    if str(r.get(x_col, "") if isinstance(r, dict) else r[0]) == x_val:
+                        val = r.get(n_col) if isinstance(r, dict) else r[columns.index(n_col)]
+                        try:
+                            row_val = round(float(str(val).replace(',', '').replace('₹', '').replace('$', '').strip()), 2) if val is not None else 0
+                        except:
+                            row_val = 0
+                        break
+                y_data.append(row_val)
+            
+            series_list.append({
+                "name": n_col,
+                "type": chart_type,
+                "data": y_data,
+                "smooth": chart_type == "line",
+                "areaStyle": {"opacity": 0.05} if chart_type == "line" else None
+            })
+
+        return {
+            "title": {"text": title, "left": "center"},
+            "color": COLORS,
+            "tooltip": {"trigger": "axis"},
+            "legend": {"top": "8%", "show": len(series_list) > 1},
+            "xAxis": {"type": "category", "data": x_data, "axisLabel": {"rotate": 30 if len(x_data) > 8 else 0}},
+            "yAxis": {"type": "value"},
+            "series": series_list,
+            "grid": {"left": "10%", "right": "5%", "bottom": "15%", "top": "18%"},
+        }
+
+    # --- CASE 2: Two categorical + one numeric ---
+    if len(str_cols) >= 2 and len(num_cols) == 1:
+        time_indicators = ["month", "date", "year", "day", "time", "week"]
+        x_col = str_cols[1]
+        series_col = str_cols[0]
+        
+        for s in str_cols:
+            if any(ti in s.lower() for ti in time_indicators):
+                x_col = s
+                series_col = [c for c in str_cols if c != s][0]
+                break
+
+        val_col = num_cols[0]
+
+        x_data = []
+        seen_x = set()
+        for r in rows:
+            val = str(r.get(x_col, "") if isinstance(r, dict) else r[columns.index(x_col)])
+            if val not in seen_x:
+                seen_x.add(val)
+                x_data.append(val)
+        
+        try:
+            x_data.sort()
+        except:
+            pass
+
+        series_cats = []
+        seen_cat = set()
+        for r in rows:
+            val = str(r.get(series_col, "") if isinstance(r, dict) else r[columns.index(series_col)])
+            if val not in seen_cat:
+                seen_cat.add(val)
+                series_cats.append(val)
+
+        series_list = []
+        for cat in series_cats:
+            y_data = []
+            for x_val in x_data:
+                row_val = 0
+                for r in rows:
+                    rcat = str(r.get(series_col, "") if isinstance(r, dict) else r[columns.index(series_col)])
+                    rx = str(r.get(x_col, "") if isinstance(r, dict) else r[columns.index(x_col)])
+                    if rcat == cat and rx == x_val:
+                        val = r.get(val_col) if isinstance(r, dict) else r[columns.index(val_col)]
+                        try:
+                            row_val = round(float(str(val).replace(',', '').replace('₹', '').replace('$', '').strip()), 2) if val is not None else 0
+                        except:
+                            row_val = 0
+                        break
+                y_data.append(row_val)
+
+            series_list.append({
+                "name": cat,
+                "type": chart_type,
+                "data": y_data,
+                "smooth": chart_type == "line",
+                "areaStyle": {"opacity": 0.05} if chart_type == "line" else None
+            })
+
+        return {
+            "title": {"text": title, "left": "center"},
+            "color": COLORS,
+            "tooltip": {"trigger": "axis"},
+            "legend": {"top": "8%", "show": len(series_list) > 1},
+            "xAxis": {"type": "category", "data": x_data, "axisLabel": {"rotate": 30 if len(x_data) > 8 else 0}},
+            "yAxis": {"type": "value"},
+            "series": series_list,
+            "grid": {"left": "10%", "right": "5%", "bottom": "15%", "top": "18%"},
+        }
+
+    # --- FALLBACK ---
+    x_col = columns[0]
+    y_col = num_cols[0] if num_cols else (columns[1] if len(columns) > 1 else columns[0])
+    
     x_data = [str(r.get(x_col, "") if isinstance(r, dict) else r[0]) for r in rows[:50]]
     y_data = []
     for r in rows[:50]:
-        val = r.get(y_col) if isinstance(r, dict) else r[1]
+        val = r.get(y_col) if isinstance(r, dict) else (r[columns.index(y_col)] if y_col in columns else r[0])
         try:
-            y_data.append(round(float(val), 2) if val is not None else 0)
-        except (ValueError, TypeError):
+            y_data.append(round(float(str(val).replace(',', '').replace('₹', '').replace('$', '').strip()), 2) if val is not None else 0)
+        except:
             y_data.append(0)
 
     return {
@@ -43,18 +196,18 @@ def _build_bar_chart(columns: list, rows: list, title: str) -> dict:
         "tooltip": {"trigger": "axis"},
         "xAxis": {"type": "category", "data": x_data, "axisLabel": {"rotate": 30 if len(x_data) > 8 else 0}},
         "yAxis": {"type": "value"},
-        "series": [{"name": y_col, "type": "bar", "data": y_data, "label": {"show": len(rows) <= 20, "position": "top"}}],
+        "series": [{"name": y_col, "type": chart_type, "data": y_data, "smooth": chart_type == "line",
+                    "areaStyle": {"opacity": 0.05} if chart_type == "line" else None}],
         "grid": {"left": "10%", "right": "5%", "bottom": "15%"},
     }
 
 
+def _build_bar_chart(columns: list, rows: list, title: str) -> dict:
+    return _pivot_and_build_multi_series(columns, rows, title, "bar")
+
+
 def _build_line_chart(columns: list, rows: list, title: str) -> dict:
-    config = _build_bar_chart(columns, rows, title)
-    if config:
-        config["series"][0]["type"] = "line"
-        config["series"][0]["smooth"] = True
-        config["series"][0]["areaStyle"] = {"opacity": 0.1}
-    return config
+    return _pivot_and_build_multi_series(columns, rows, title, "line")
 
 
 def _build_pie_chart(columns: list, rows: list, title: str) -> dict:
@@ -243,6 +396,12 @@ async def generate_viz_config(state: AnalyticsState) -> AnalyticsState:
 
     if not rows:
         return {**state, "viz_config": {}, "viz_type": "table"}
+
+    # Suppress charts for qualitative/analytical questions (prefer point format/text only)
+    qualitative_keywords = ["reason", "factor", "cause", "why", "explain", "influence", "driver"]
+    if any(k in question.lower() for k in qualitative_keywords):
+        log.info("viz.suppressed_for_qualitative_query", question=question)
+        return {**state, "viz_config": None, "viz_type": None}
 
     # Step 1: Determine chart type
     chart_hint = intent.get("chart_type_hint")

@@ -97,6 +97,12 @@ Return JSON:
 }}
 
 Keep insights actionable and business-focused. Use specific numbers from the data.
+
+CRITICAL REASONING & CONTENT RULES:
+1. If the user asks for "reasons", "causes", "factors", or "drivers" of a trend (decline/growth/change):
+   - Every single bullet point in the "insights" list MUST represent a specific, concrete reason, factor, or driver (e.g., specific platform drop, category decline, volume decrease, seasonal effect) based on the data.
+   - Do NOT just summarize the chart or repeat overall statistics. Answer the "why" or "what causes this" directly using the data points.
+
 IMPORTANT: Use ₹ (Rupee) symbol ONLY for monetary values (Revenue, Sales, Spend, Profit).
 Do NOT use ₹ for counts (Orders, Units, Users, Tickets).
 Format large numbers in Indian style: e.g. ₹23.8 Cr (monetary), 2.8 L units (count)."""

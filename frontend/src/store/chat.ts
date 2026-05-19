@@ -46,8 +46,9 @@ interface ChatStore {
   purgeExpiredSessions: () => void
 
   addUserMessage: (content: string) => void
-  addAssistantMessage: (response: QueryResponse) => void
-  setConversationId: (id: string) => void
+  addAssistantMessage: (response: QueryResponse, sessionId?: string) => void
+  deleteMessage: (messageId: string) => void
+  setConversationId: (id: string, sessionId?: string) => void
 }
 
 const EXPIRY_TIME_MS = 10 * 60 * 1000 // 10 minutes
@@ -115,12 +116,12 @@ export const useChatStore = create<ChatStore>()(
         return { sessions: newSessions, activeSessionId: sessionId }
       }),
 
-      addAssistantMessage: (response) => set((state) => {
-        const sessionId = state.activeSessionId
-        if (!sessionId) return state
-
+      addAssistantMessage: (response, sessionId) => set((state) => {
+        const targetId = sessionId || state.activeSessionId
+        if (!targetId) return state
+ 
         const newSessions = [...state.sessions]
-        const index = newSessions.findIndex(s => s.id === sessionId)
+        const index = newSessions.findIndex(s => s.id === targetId)
         if (index === -1) return state
 
         const currentSession = { ...newSessions[index], messages: [...newSessions[index].messages], updatedAt: Date.now() }
@@ -150,14 +151,42 @@ export const useChatStore = create<ChatStore>()(
         return { sessions: newSessions }
       }),
 
-      setConversationId: (id) => set((state) => {
-        const sessionId = state.activeSessionId
-        if (!sessionId) return state
+      setConversationId: (id, sessionId) => set((state) => {
+        const targetId = sessionId || state.activeSessionId
+        if (!targetId) return state
         const newSessions = [...state.sessions]
-        const index = newSessions.findIndex(s => s.id === sessionId)
+        const index = newSessions.findIndex(s => s.id === targetId)
         if (index !== -1) {
           newSessions[index] = { ...newSessions[index], conversationId: id }
         }
+        return { sessions: newSessions }
+      }),
+
+      deleteMessage: (messageId) => set((state) => {
+        const sessionId = state.activeSessionId
+        if (!sessionId) return state
+
+        const newSessions = [...state.sessions]
+        const sessionIndex = newSessions.findIndex(s => s.id === sessionId)
+        if (sessionIndex === -1) return state
+
+        const currentSession = newSessions[sessionIndex]
+        const messageIndex = currentSession.messages.findIndex(m => m.id === messageId)
+        
+        if (messageIndex === -1) return state
+
+        // Delete the user message and the subsequent assistant message (if it exists)
+        let numToDelete = 1
+        if (currentSession.messages[messageIndex].role === 'user' && 
+            messageIndex + 1 < currentSession.messages.length && 
+            currentSession.messages[messageIndex + 1].role === 'assistant') {
+          numToDelete = 2
+        }
+
+        const newMessages = [...currentSession.messages]
+        newMessages.splice(messageIndex, numToDelete)
+
+        newSessions[sessionIndex] = { ...currentSession, messages: newMessages, updatedAt: Date.now() }
         return { sessions: newSessions }
       })
     }),

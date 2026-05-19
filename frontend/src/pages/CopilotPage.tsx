@@ -1,21 +1,31 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { BarChart2, Trash2, Database, Clock, History } from 'lucide-react'
-import { useChatStore } from '../store/chat'
-import { sendQuery, uploadFile } from '../api/client'
+import { BarChart2, Database, Clock, History, Plus, Trash2 } from 'lucide-react'
+import { useChatStore, ChatSession } from '../store/chat'
+import { sendQuery } from '../api/client'
 import { ChatMessageComponent } from '../components/Chat/ChatMessage'
 import { ChatInput } from '../components/Chat/ChatInput'
 
 export const CopilotPage: React.FC = () => {
   const {
-    sessions, activeSessionId, isLoading, datasourceId, uploadedFile,
+    sessions, activeSessionId, isLoading, datasourceId,
     addUserMessage, addAssistantMessage, setLoading, startNewSession,
-    setConversationId, setUploadedFile, setDatasourceId, loadSession, purgeExpiredSessions
+    setConversationId, setUploadedFile, setDatasourceId, loadSession, purgeExpiredSessions,
+    deleteSession, deleteMessage
   } = useChatStore()
+
+  // Permanently reset to ClickHouse datasource — clear any stale uploaded file from localStorage
+  useEffect(() => {
+    setDatasourceId('limese')
+    setUploadedFile(null)
+  }, [])
 
   const activeSession = sessions.find(s => s.id === activeSessionId)
   const messages = activeSession?.messages || []
   const conversationId = activeSession?.conversationId || null
   const [showHistory, setShowHistory] = useState(false)
+  const [sessionToDelete, setSessionToDelete] = useState<ChatSession | null>(null)
+  const [chatInputValue, setChatInputValue] = useState('')
+  const [messageToDelete, setMessageToDelete] = useState<string | null>(null)
 
   useEffect(() => {
     purgeExpiredSessions()
@@ -52,12 +62,16 @@ export const CopilotPage: React.FC = () => {
   const handleSend = async (question: string) => {
     if (isLoading) return
     addUserMessage(question)
+    
+    // Immediately capture the activeSessionId in case the user switches sessions during loading
+    const targetSessionId = useChatStore.getState().activeSessionId || undefined
+    
     setLoading(true)
     try {
       const response = await sendQuery(question, datasourceId, conversationId || undefined)
-      addAssistantMessage(response)
+      addAssistantMessage(response, targetSessionId)
       if (response.conversation_id && !conversationId) {
-        setConversationId(response.conversation_id)
+        setConversationId(response.conversation_id, targetSessionId)
       }
     } catch (err: unknown) {
       addAssistantMessage({
@@ -68,25 +82,13 @@ export const CopilotPage: React.FC = () => {
         sql: '', sql_explanation: '', row_count: 0, viz_type: null,
         columns: [], rows: [], total_latency_ms: 0, model_used: '',
         error: String(err),
-      })
+      }, targetSessionId)
     } finally {
       setLoading(false)
     }
   }
 
-  const handleUpload = async (file: File) => {
-    setLoading(true)
-    try {
-      const result = await uploadFile(file)
-      setDatasourceId(result.datasource_id)
-      setUploadedFile(file.name)
-      await handleSend(`I just uploaded "${file.name}". What data does it contain and what can I explore?`)
-    } catch (err) {
-      console.error('Upload failed', err)
-    } finally {
-      setLoading(false)
-    }
-  }
+
 
   return (
     <div className="flex flex-col h-screen bg-slate-50">
@@ -106,13 +108,7 @@ export const CopilotPage: React.FC = () => {
           {/* Datasource indicator */}
           <div className="flex items-center gap-2 bg-slate-100 rounded-lg px-3 py-1.5 text-xs text-slate-600">
             <Database size={12} className="text-green-500" />
-            {uploadedFile ? (
-              <span>{uploadedFile}</span>
-            ) : datasourceId === 'limese' ? (
-              <span>Limese Analytics · ClickHouse</span>
-            ) : (
-              <span>Demo Database</span>
-            )}
+            <span>Limese Analytics · ClickHouse</span>
           </div>
 
           <div className="flex items-center gap-2">
@@ -140,16 +136,31 @@ export const CopilotPage: React.FC = () => {
                         </div>
                       ) : (
                         sessions.map(s => (
-                          <button
+                          <div
                             key={s.id}
-                            onClick={() => {
-                              loadSession(s.id);
-                              setShowHistory(false);
-                            }}
-                            className={`w-full text-left px-3 py-2.5 text-xs transition border-b border-slate-50 last:border-0 block ${s.id === activeSessionId ? 'bg-blue-50 text-blue-700' : 'hover:bg-slate-50 text-slate-600'}`}
+                            className={`flex items-center justify-between border-b border-slate-50 last:border-0 hover:bg-slate-50 transition ${s.id === activeSessionId ? 'bg-blue-50/50' : ''}`}
                           >
-                            <span className="truncate block font-medium">{s.title}</span>
-                          </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSessionToDelete(s);
+                                setShowHistory(false);
+                              }}
+                              className="px-3 py-2.5 text-slate-500 hover:text-red-600 transition-colors"
+                              title="Delete conversation"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                            <button
+                              onClick={() => {
+                                loadSession(s.id);
+                                setShowHistory(false);
+                              }}
+                              className={`flex-1 text-left py-2.5 pr-3 pl-1 text-xs truncate font-medium ${s.id === activeSessionId ? 'text-blue-700' : 'text-slate-600'}`}
+                            >
+                              {s.title}
+                            </button>
+                          </div>
                         ))
                       )}
                     </div>
@@ -161,9 +172,9 @@ export const CopilotPage: React.FC = () => {
             {(messages.length > 0 || activeSessionId) && (
               <button
                 onClick={startNewSession}
-                className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-red-500 transition px-2 py-1.5 rounded-lg hover:bg-red-50"
+                className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-blue-600 transition px-2 py-1.5 rounded-lg hover:bg-blue-50"
               >
-                <Trash2 size={13} /> New Chat
+                <Plus size={14} /> New Chat
               </button>
             )}
           </div>
@@ -181,6 +192,8 @@ export const CopilotPage: React.FC = () => {
                 key={msg.id}
                 message={msg}
                 onFollowUp={handleSend}
+                onEdit={(id, content) => setChatInputValue(content)}
+                onDelete={(id) => setMessageToDelete(id)}
               />
             ))}
             {isLoading && <ThinkingIndicator seconds={elapsedSeconds} />}
@@ -192,9 +205,82 @@ export const CopilotPage: React.FC = () => {
       {/* Input */}
       <div className="bg-white border-t border-slate-200">
         <div className="max-w-4xl mx-auto">
-          <ChatInput onSend={handleSend} onUpload={handleUpload} isLoading={isLoading} />
+          <ChatInput
+            value={chatInputValue}
+            onChange={setChatInputValue}
+            onSend={handleSend}
+            isLoading={isLoading}
+          />
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {sessionToDelete && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] animate-in fade-in duration-200">
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-xl max-w-sm w-full mx-4 p-5 animate-in zoom-in-95 duration-200">
+            <h3 className="font-bold text-slate-800 text-base mb-1.5 flex items-center gap-2">
+              <span className="p-1.5 bg-red-50 rounded-lg text-red-500">
+                <Trash2 size={16} />
+              </span>
+              Delete Conversation?
+            </h3>
+            <p className="text-xs text-slate-500 mb-5 leading-relaxed">
+              Are you sure you want to delete <span className="font-semibold text-slate-700">"{sessionToDelete.title}"</span>? This action cannot be undone.
+            </p>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                onClick={() => setSessionToDelete(null)}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  deleteSession(sessionToDelete.id);
+                  setSessionToDelete(null);
+                }}
+                className="px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-xs font-medium transition shadow-sm"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Message Confirmation Modal */}
+      {messageToDelete && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] animate-in fade-in duration-200">
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-xl max-w-sm w-full mx-4 p-5 animate-in zoom-in-95 duration-200">
+            <h3 className="font-bold text-slate-800 text-base mb-1.5 flex items-center gap-2">
+              <span className="p-1.5 bg-red-50 rounded-lg text-red-500">
+                <Trash2 size={16} />
+              </span>
+              Delete Question?
+            </h3>
+            <p className="text-xs text-slate-500 mb-5 leading-relaxed">
+              Are you sure you want to delete this question? This will also remove the associated response.
+            </p>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                onClick={() => setMessageToDelete(null)}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  deleteMessage(messageToDelete);
+                  setMessageToDelete(null);
+                }}
+                className="px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-xs font-medium transition shadow-sm"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

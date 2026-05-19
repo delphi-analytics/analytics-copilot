@@ -30,10 +30,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     openai_api_key: str = ""
     gemini_api_key: str = ""
-    mistral_api_key: str = ""
     openrouter_api_key: str = ""
-    deepseek_api_key: str = ""      # Best for SQL/code - https://platform.deepseek.com/
-    cohere_api_key: str = ""        # Free tier available - https://dashboard.cohere.com/
 
     # Model routing
     llm_fast_model: str = "groq/llama-3.1-8b-instant"        # Intent, routing decisions
@@ -56,7 +53,7 @@ class Settings(BaseSettings):
 
     # Query limits
     max_rows_returned: int = 10000
-    query_timeout_seconds: int = 30
+    query_timeout_seconds: int = 90
     max_conversation_history: int = 20
 
 

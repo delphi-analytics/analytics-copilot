@@ -1,26 +1,19 @@
 import React, { useRef, useState } from 'react'
-import { Send, Paperclip, Loader } from 'lucide-react'
+import { Send, Loader } from 'lucide-react'
 
 interface Props {
   onSend: (message: string) => void
-  onUpload: (file: File) => void
   isLoading: boolean
   placeholder?: string
+  value?: string
+  onChange?: (val: string) => void
 }
 
-const QUICK_QUESTIONS = [
-  "Total revenue by platform as pie chart",
-  "Top 10 SKUs by units ordered",
-  "Monthly revenue trend for Nykaa Beauty",
-  "Skincare vs Makeup revenue by month",
-  "Which SKUs have low inventory?",
-  "Show Shopify orders trend in 2025",
-]
+export const ChatInput: React.FC<Props> = ({ onSend, isLoading, placeholder, value, onChange }) => {
+  const [internalInput, setInternalInput] = useState('')
+  const input = value !== undefined ? value : internalInput
+  const setInput = onChange ? onChange : setInternalInput
 
-export const ChatInput: React.FC<Props> = ({ onSend, onUpload, isLoading, placeholder }) => {
-  const [input, setInput] = useState('')
-  const [showQuick, setShowQuick] = useState(true)
-  const fileRef = useRef<HTMLInputElement>(null)
   const textRef = useRef<HTMLTextAreaElement>(null)
 
   const handleSend = () => {
@@ -28,7 +21,6 @@ export const ChatInput: React.FC<Props> = ({ onSend, onUpload, isLoading, placeh
     if (!trimmed || isLoading) return
     onSend(trimmed)
     setInput('')
-    setShowQuick(false)
     setTimeout(() => textRef.current?.focus(), 50)
   }
 
@@ -39,31 +31,8 @@ export const ChatInput: React.FC<Props> = ({ onSend, onUpload, isLoading, placeh
     }
   }
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      onUpload(file)
-      e.target.value = ''
-    }
-  }
-
   return (
     <div className="flex flex-col gap-3">
-      {/* Quick question chips */}
-      {showQuick && (
-        <div className="flex flex-wrap gap-2 px-4">
-          {QUICK_QUESTIONS.map((q) => (
-            <button
-              key={q}
-              onClick={() => { onSend(q); setShowQuick(false) }}
-              className="text-xs bg-slate-100 hover:bg-blue-50 hover:text-blue-700 border border-slate-200 hover:border-blue-300 rounded-full px-3 py-1.5 text-slate-600 transition"
-            >
-              {q}
-            </button>
-          ))}
-        </div>
-      )}
-
       {/* Input bar */}
       <div className="flex items-end gap-2 px-4 pb-4">
         <div className="flex-1 flex items-end bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition">
@@ -79,20 +48,6 @@ export const ChatInput: React.FC<Props> = ({ onSend, onUpload, isLoading, placeh
             placeholder={placeholder || "Ask anything about your data... (e.g. 'Show sales trend by region')"}
             rows={1}
             className="flex-1 px-4 py-3 text-sm bg-transparent outline-none resize-none max-h-32 text-slate-700 placeholder-slate-400"
-          />
-          <button
-            onClick={() => fileRef.current?.click()}
-            className="p-3 text-slate-400 hover:text-blue-500 transition"
-            title="Upload CSV or Excel"
-          >
-            <Paperclip size={18} />
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".csv,.xlsx,.xls"
-            onChange={handleFileChange}
-            className="hidden"
           />
         </div>
 

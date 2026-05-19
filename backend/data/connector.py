@@ -61,7 +61,7 @@ async def execute_query(datasource_id: str, sql: str, timeout: int = 30) -> dict
 
     try:
         result = await asyncio.wait_for(
-            _execute_on_datasource(ds_type, ds["config"], sql),
+            _execute_on_datasource(ds_type, ds["config"], sql, timeout),
             timeout=timeout,
         )
         return result
@@ -69,7 +69,7 @@ async def execute_query(datasource_id: str, sql: str, timeout: int = 30) -> dict
         raise RuntimeError(f"Query timed out after {timeout} seconds")
 
 
-async def _execute_on_datasource(ds_type: str, config: dict, sql: str) -> dict:
+async def _execute_on_datasource(ds_type: str, config: dict, sql: str, timeout: int = 30) -> dict:
     if ds_type == "sqlite":
         return await _execute_sqlite(config, sql)
     if ds_type in ("postgresql", "postgres"):
@@ -77,7 +77,7 @@ async def _execute_on_datasource(ds_type: str, config: dict, sql: str) -> dict:
     if ds_type == "csv":
         return await _execute_csv(config, sql)
     if ds_type == "clickhouse":
-        return await _execute_clickhouse(config, sql)
+        return await _execute_clickhouse(config, sql, timeout)
     raise ValueError(f"Unsupported datasource type: {ds_type}")
 
 
@@ -149,7 +149,7 @@ async def _execute_csv(config: dict, sql: str) -> dict:
     return await loop.run_in_executor(None, _run)
 
 
-async def _execute_clickhouse(config: dict, sql: str) -> dict:
+async def _execute_clickhouse(config: dict, sql: str, timeout: int = 30) -> dict:
     from backend.data.clickhouse_connector import ClickHouseConnector
     conn = ClickHouseConnector(
         host=config.get("host", "localhost"),
@@ -158,7 +158,7 @@ async def _execute_clickhouse(config: dict, sql: str) -> dict:
         password=config.get("password", ""),
         database=config.get("database", config.get("dbname", "default")),
     )
-    return await conn.execute(sql)
+    return await conn.execute(sql, timeout)
 
 
 async def _introspect_schema(ds: dict) -> dict:

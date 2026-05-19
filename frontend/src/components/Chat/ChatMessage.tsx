@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { ChevronDown, ChevronUp, Code, Lightbulb, Clock } from 'lucide-react'
+import { ChevronDown, ChevronUp, Code, Lightbulb, Clock, Edit2, Trash2 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { ChartRenderer } from '../Charts/ChartRenderer'
 import { indianiseCurrencyText, autoFormatValue } from '../../lib/formatters'
@@ -8,14 +8,36 @@ import type { ChatMessage as ChatMessageType } from '../../store/chat'
 interface Props {
   message: ChatMessageType
   onFollowUp: (question: string) => void
+  onEdit?: (messageId: string, content: string) => void
+  onDelete?: (messageId: string) => void
 }
 
-export const ChatMessageComponent: React.FC<Props> = ({ message, onFollowUp }) => {
+export const ChatMessageComponent: React.FC<Props> = ({ message, onFollowUp, onEdit, onDelete }) => {
   const [showSQL, setShowSQL] = useState(false)
 
   if (message.role === 'user') {
     return (
-      <div className="flex justify-end mb-4">
+      <div className="flex justify-end mb-4 group relative">
+        <div className="flex items-center gap-2 mr-2 opacity-60 hover:opacity-100 transition-opacity">
+          {onEdit && (
+            <button
+              onClick={() => onEdit(message.id, message.content)}
+              className="p-1.5 text-slate-400 hover:text-blue-500 bg-white rounded-lg shadow-sm border border-slate-200 transition"
+              title="Edit question"
+            >
+              <Edit2 size={14} />
+            </button>
+          )}
+          {onDelete && (
+            <button
+              onClick={() => onDelete(message.id)}
+              className="p-1.5 text-slate-400 hover:text-red-500 bg-white rounded-lg shadow-sm border border-slate-200 transition"
+              title="Delete question"
+            >
+              <Trash2 size={14} />
+            </button>
+          )}
+        </div>
         <div className="max-w-2xl bg-blue-600 text-white rounded-2xl rounded-tr-sm px-5 py-3 shadow-sm">
           <p className="text-sm leading-relaxed">{message.content}</p>
         </div>
@@ -49,11 +71,17 @@ export const ChatMessageComponent: React.FC<Props> = ({ message, onFollowUp }) =
       {/* Error state — friendly messages for known errors */}
       {message.error && (
         <div className={`rounded-xl px-4 py-3 text-sm border ${
-          message.error.includes('Daily AI query limit') || message.error.includes('Rate limit')
+          message.error.toLowerCase().includes('daily ai query limit') ||
+          message.error.toLowerCase().includes('rate_limit') ||
+          message.error.toLowerCase().includes('ratelimit') ||
+          message.error.toLowerCase().includes('rate limit')
             ? 'bg-amber-50 border-amber-200 text-amber-800'
             : 'bg-red-50 border-red-200 text-red-700'
         }`}>
-          {message.error.includes('Daily AI query limit') ? (
+          {message.error.toLowerCase().includes('daily ai query limit') ||
+          message.error.toLowerCase().includes('rate_limit') ||
+          message.error.toLowerCase().includes('ratelimit') ||
+          message.error.toLowerCase().includes('rate limit') ? (
             <div className="space-y-2">
               <p className="font-semibold">⏳ Daily AI limit reached</p>
               <p className="text-xs">Groq free tier: 100K tokens/day used. Options:</p>
