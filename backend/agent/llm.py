@@ -28,8 +28,14 @@ def _inject_keys() -> None:
     if settings.gemini_api_key:
         os.environ["GEMINI_API_KEY"] = settings.gemini_api_key
         os.environ["GOOGLE_API_KEY"] = settings.gemini_api_key
+    if settings.mistral_api_key:
+        os.environ["MISTRAL_API_KEY"] = settings.mistral_api_key
     if settings.openrouter_api_key:
         os.environ["OPENROUTER_API_KEY"] = settings.openrouter_api_key
+    if settings.deepseek_api_key:
+        os.environ["DEEPSEEK_API_KEY"] = settings.deepseek_api_key
+    if settings.cohere_api_key:
+        os.environ["COHERE_API_KEY"] = settings.cohere_api_key
 
 
 _inject_keys()
@@ -53,8 +59,14 @@ def _get_key(model: str) -> str | None:
         return settings.openai_api_key or None
     if "gemini" in model:
         return settings.gemini_api_key or None
+    if "mistral" in model:
+        return settings.mistral_api_key or None
     if "openrouter" in model:
         return settings.openrouter_api_key or None
+    if "deepseek" in model:
+        return settings.deepseek_api_key or None
+    if "cohere" in model or "command" in model:
+        return settings.cohere_api_key or None
     return None
 
 
@@ -73,15 +85,21 @@ async def call_llm(
     if model is None:
         model = settings.llm_fast_model if task == "routing" else settings.llm_smart_model
 
-    # Build fallback chain:
-    # For 70B SQL model: retry → gemini (same quality, different quota)
-    # For 8B routing model: retry → fallback 8B → gemini
+    # Build fallback chain with multiple FREE providers:
+    # Order: retry → deepseek (best SQL, ~free) → mistral → gemini → cohere
+    # This ensures we always have a working model even if some hit rate limits
     models_to_try = [model]
     is_large_model = "70b" in model or "versatile" in model or "pro" in model
     if not is_large_model and settings.llm_fallback_model != model:
         models_to_try.append(settings.llm_fallback_model)  # only add 8B fallback for routing tasks
-    if settings.gemini_api_key and "gemini/gemini-1.5-flash" not in models_to_try:
-        models_to_try.append("gemini/gemini-1.5-flash")  # free, separate quota, good context
+    if settings.deepseek_api_key and "deepseek" not in model:
+        models_to_try.append("deepseek/deepseek-coder")  # Best for SQL, very cheap
+    if settings.mistral_api_key and "mistral" not in model:
+        models_to_try.append("mistral/mistral-large-latest")  # Good quality, free tier
+    if settings.gemini_api_key and "gemini" not in model and "gemini/gemini-1.5-flash" not in models_to_try:
+        models_to_try.append("gemini/gemini-1.5-flash")  # Free, 1M context
+    if settings.cohere_api_key and "cohere" not in model and "command" not in model:
+        models_to_try.append("cohere/command-r-plus-08-2024")  # Free tier available
     last_error = None
 
     for m in models_to_try:
