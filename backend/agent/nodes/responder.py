@@ -8,8 +8,100 @@ import structlog
 from backend.agent.state import AnalyticsState
 from backend.agent.memory import vector_memory
 from backend.agent.llm import call_llm
+from backend.services.minio_conversation import minio_conversation_store
 
 log = structlog.get_logger(__name__)
+
+
+def _get_conversational_response(intent_type: str, question: str) -> dict:
+    """Generate conversational response for greetings and off-topic questions."""
+    if intent_type == "greeting":
+        return {
+            "text": (
+                "# 👋 Hello! I'm your Data Analytics Copilot\n\n"
+                "I can help you explore and analyze your data with natural language questions.\n\n"
+                "**Try asking:**\n"
+                "• Show revenue by platform\n"
+                "• Top 10 products by sales\n"
+                "• What's the trend for Nykaa this month?\n"
+                "• Compare inventory across platforms\n\n"
+                "**Or ask analytical questions:**\n"
+                "• Why is Nykaa performing better?\n"
+                "• What caused the drop in returns?\n"
+                "• How are we doing this quarter?"
+            ),
+            "chart": None,
+            "insights": [],
+            "follow_up_questions": [
+                "Show me revenue by platform",
+                "What are the top selling products?",
+                "How does Nykaa compare to Myntra?"
+            ],
+            "viz_type": None,
+            "row_count": 0,
+        }
+    elif intent_type == "conversational":
+        # Handle "who are you", "what can you do", etc.
+        return {
+            "text": (
+                "I'm your **Data Analytics Copilot** — an AI assistant that helps you explore and analyze "
+                "your data using natural language questions.\n\n"
+                "**Here's what I can do:**\n"
+                "• Answer questions about your sales, revenue, products, and customers\n"
+                "• Generate charts and visualizations on demand\n"
+                "• Analyze trends and explain insights in plain English\n"
+                "• Help you discover patterns in your data\n\n"
+                "**Just ask me anything like:**\n"
+                "• \"Show me revenue by platform\"\n"
+                "• \"Which products are selling the most?\"\n"
+                "• \"What's the trend for Nykaa this month?\"\n"
+                "• \"Why are returns increasing?\""
+            ),
+            "chart": None,
+            "insights": [],
+            "follow_up_questions": [
+                "Show me revenue by platform",
+                "What are the top selling products?",
+                "How does Nykaa compare to Myntra?"
+            ],
+            "viz_type": None,
+            "row_count": 0,
+        }
+    elif intent_type == "off_topic":
+        return {
+            "text": (
+                "I'm an analytics assistant focused on helping you explore your data. "
+                f"I can't help with \"{question}\", but I'd love to help you analyze your sales, "
+                "inventory, or customer metrics instead!"
+            ),
+            "chart": None,
+            "insights": [],
+            "follow_up_questions": [
+                "Show me revenue by platform",
+                "What are the top selling products?",
+                "How is our business doing this month?"
+            ],
+            "viz_type": None,
+            "row_count": 0,
+        }
+    else:
+        # Fallback for unknown conversational intents
+        return {
+            "text": (
+                "I'm not sure I understood that. Could you rephrase your question? "
+                "I'm here to help you analyze your data - try asking about sales, products, "
+                "platforms, or trends."
+            ),
+            "chart": None,
+            "insights": [],
+            "follow_up_questions": [
+                "Show me revenue by platform",
+                "What are the top selling products?",
+                "Show monthly sales trend"
+            ],
+            "viz_type": None,
+            "row_count": 0,
+        }
 
 
 async def compose_response(state: AnalyticsState) -> AnalyticsState:
@@ -21,6 +113,7 @@ async def compose_response(state: AnalyticsState) -> AnalyticsState:
     query_results = state.get("query_results", {})
     sql_explanation = state.get("sql_explanation", "")
     error = state.get("error")
+    intent_type = state.get("intent", {}).get("type", "")
 
     # Check if pre-filter already handled this (greeting, off-topic)
     if state.get("pre_filter_response"):
@@ -30,6 +123,18 @@ async def compose_response(state: AnalyticsState) -> AnalyticsState:
             "response_text": state["pre_filter_response"]["text"],
             "follow_up_questions": state["pre_filter_response"].get("follow_up_questions", []),
             "final_response": state["pre_filter_response"],
+        }
+
+    # Check if LLM classified as greeting/off-topic but pre-filter didn't catch it
+    # This handles cases like "gm", "what are you doing" that go through LLM
+    if intent_type in ("greeting", "conversational", "off_topic"):
+        log.info("responder.llm_classified_conversational", type=intent_type)
+        greeting_response = _get_conversational_response(intent_type, question)
+        return {
+            **state,
+            "response_text": greeting_response["text"],
+            "follow_up_questions": greeting_response.get("follow_up_questions", []),
+            "final_response": greeting_response,
         }
 
     # Check if this is an insight follow-up response
@@ -44,7 +149,10 @@ async def compose_response(state: AnalyticsState) -> AnalyticsState:
 
     # Check if this is an analytical question - generate narrative response
     intent_type = state.get("intent", {}).get("type", "")
-    if intent_type == "analytical_question" and query_results.get("row_count", 0) > 0:
+    if intent_type == "analytical_question":
+        # Even if no data, provide a helpful conversational response
+        if query_results.get("row_count", 0) == 0:
+            return await _compose_analytical_no_data_response(state)
         return await _compose_analytical_response(state)
 
     row_count = query_results.get("row_count", 0)
@@ -163,6 +271,19 @@ RULES:
             log.debug("responder.stored_in_vector_memory", question=state["user_question"][:60])
         except Exception as e:
             log.warning("responder.vector_store_failed", error=str(e))
+
+    # Store conversation in MinIO for persistent history
+    try:
+        minio_conversation_store.save_conversation(
+            user_id=state.get("user_id", "anonymous"),
+            conversation_id=state.get("conversation_id", "default"),
+            question=state["user_question"],
+            response=final_response,
+            session_id=state.get("session_id"),
+        )
+        log.debug("responder.stored_in_minio", user_id=state.get("user_id", "anonymous"))
+    except Exception as e:
+        log.warning("responder.minio_store_failed", error=str(e))
 
     return {**state, "response_text": response_text, "follow_up_questions": follow_ups, "final_response": final_response}
 
@@ -377,4 +498,66 @@ async def _generate_analytical_followups(question: str, key_metrics: dict, insig
         return await _generate_follow_ups(question, insights, "table", sql, columns)
     except Exception:
         return _default_follow_ups(question)
+
+
+async def _compose_analytical_no_data_response(state: AnalyticsState) -> dict:
+    """
+    Compose a helpful response for analytical questions when no data is found.
+    Instead of 'No data found', provides context and suggests alternatives.
+    """
+    question = state["user_question"]
+    intent = state.get("intent", {})
+    entities = intent.get("entities", [])
+
+    # Build a contextual response
+    if entities:
+        entities_str = ", ".join(entities[:3])
+        response_text = (
+            f"I don't have specific data about **{entities_str}** in the current database, "
+            f"or the combination of filters returned no results.\n\n"
+            f"However, I can help you explore related questions. Would you like to:\n"
+            f"• See overall revenue trends instead?\n"
+            f"• Explore data at a broader level (e.g., by platform or category)?\n"
+            f"• Check a different time period?"
+        )
+    else:
+        response_text = (
+            f"I couldn't find data directly addressing your question about \"{question}.\"\n\n"
+            f"This could mean:\n"
+            f"• The specific data points aren't in the database\n"
+            f"• The filters are too restrictive\n"
+            f"• The time period has no data\n\n"
+            f"Try asking about:\n"
+            f"• Overall revenue by platform\n"
+            f"• Top products by sales\n"
+            f"• Monthly sales trends"
+        )
+
+    # Generate contextual follow-up questions
+    follow_ups = [
+        "Show me overall revenue by platform",
+        "What are the top selling products?",
+        "Show monthly revenue trend",
+    ]
+
+    if entities:
+        entity = entities[0]
+        follow_ups.insert(0, f"Show me all data related to {entity}")
+        follow_ups.insert(1, f"What do we know about {entity}?")
+
+    return {
+        **state,
+        "response_text": response_text,
+        "follow_up_questions": follow_ups,
+        "final_response": {
+            "text": response_text,
+            "chart": None,
+            "insights": [],
+            "key_metrics": {},
+            "follow_up_questions": follow_ups,
+            "sql": state.get("sql_query", ""),
+            "row_count": 0,
+            "viz_type": None,
+        },
+    }
 

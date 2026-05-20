@@ -1,8 +1,9 @@
 /**
  * ChartRenderer — renders Apache ECharts option objects from the backend.
  * Applies ₹ formatting directly on axis labels, data labels, and tooltips.
+ * Includes export functionality with proper backgrounds.
  */
-import React, { useMemo } from 'react'
+import React, { useMemo, useRef } from 'react'
 import ReactECharts from 'echarts-for-react'
 import { autoFormatValue, indianiseCurrencyText } from '../../lib/formatters'
 
@@ -12,6 +13,7 @@ interface ChartRendererProps {
   columns?: string[]
   rows?: Record<string, unknown>[]
   height?: string
+  theme?: 'light' | 'dark'
 }
 
 // ─── Formatters ──────────────────────────────────────────────────────────────
@@ -166,39 +168,116 @@ function patchConfig(cfg: Record<string, unknown>): Record<string, unknown> {
   }
 
   // ── Global style ───────────────────────────────────────────────────────────
-  out.backgroundColor = 'transparent'
+  // Use proper background color for export (not transparent)
+  out.backgroundColor = '#ffffff'
   out.animation = true
   out.animationDuration = 800
   return out
 }
 
+// ─── Export functions ───────────────────────────────────────────────────────────
+
+function downloadChartAsImage(chartInstance: any, filename: string, theme: 'light' | 'dark') {
+  const url = chartInstance.getDataURL({
+    type: 'png',
+    pixelRatio: 2, // Higher quality
+    backgroundColor: theme === 'dark' ? '#1e293b' : '#ffffff'
+  })
+
+  const link = document.createElement('a')
+  link.download = `${filename}.png`
+  link.href = url
+  link.click()
+}
+
+function exportTableToCSV(columns: string[], rows: Record<string, unknown>[], filename: string) {
+  // Create CSV content
+  const csvRows: string[] = []
+
+  // Header row
+  csvRows.push(columns.map(c => c.replace(/_/g, ' ')).join(','))
+
+  // Data rows
+  for (const row of rows) {
+    const values = columns.map(col => {
+      const val = row[col]
+      // Escape quotes and wrap in quotes if contains comma
+      const strVal = String(val ?? '')
+      if (strVal.includes(',') || strVal.includes('"') || strVal.includes('\n')) {
+        return `"${strVal.replace(/"/g, '""')}"`
+      }
+      return strVal
+    })
+    csvRows.push(values.join(','))
+  }
+
+  const csvContent = csvRows.join('\n')
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(blob)
+  link.download = `${filename}.csv`
+  link.click()
+}
+
 // ─── Components ───────────────────────────────────────────────────────────────
 
 export const ChartRenderer: React.FC<ChartRendererProps> = ({
-  vizConfig, vizType, columns = [], rows = [], height = '400px'
+  vizConfig, vizType, columns = [], rows = [], height = '400px', theme = 'light'
 }) => {
+  const chartRef = useRef<any>(null)
+
   if (!vizConfig || vizType === null) return null
 
   if (vizType === 'table' || vizConfig.type === 'table') {
-    return <DataTable columns={columns} rows={rows} />
+    return <DataTable columns={columns} rows={rows} theme={theme} />
   }
 
-  const option = useMemo(() => patchConfig(vizConfig), [vizConfig])
+  const option = useMemo(() => {
+    const patched = patchConfig(vizConfig)
+    // Update background based on theme
+    patched.backgroundColor = theme === 'dark' ? '#1e293b' : '#ffffff'
+    return patched
+  }, [vizConfig, theme])
 
   const onChartClick = (params: any) => {
     console.log('Chart clicked:', params.name, params.value)
-    // Placeholder for Phase 4.3 drill-down logic
+  }
+
+  const handleExportChart = () => {
+    if (chartRef.current) {
+      const chartInstance = chartRef.current.getEchartsInstance()
+      const title = String(vizConfig.title || vizConfig.text || 'chart')
+      downloadChartAsImage(chartInstance, title.replace(/[^a-z0-9]/gi, '_'), theme)
+    }
   }
 
   return (
-    <div className="w-full rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-all hover:shadow-md">
+    <div className={`w-full rounded-xl border shadow-sm transition-all hover:shadow-md ${
+      theme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'
+    }`}>
+      {/* Export button */}
+      <div className="flex justify-end p-2">
+        <button
+          onClick={handleExportChart}
+          className="px-3 py-1.5 text-xs font-medium rounded-lg flex items-center gap-1.5 transition-colors ${
+            theme === 'dark'
+              ? 'bg-slate-700 text-slate-200 hover:bg-slate-600'
+              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+          }"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          Export PNG
+        </button>
+      </div>
+
       <ReactECharts
+        ref={chartRef}
         option={option}
         style={{ height, width: '100%' }}
         opts={{ renderer: 'canvas' }}
-        onEvents={{
-          'click': onChartClick
-        }}
+        onEvents={{ 'click': onChartClick }}
         notMerge
       />
     </div>
@@ -207,44 +286,87 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({
 
 // ─── Data table ───────────────────────────────────────────────────────────────
 
-const DataTable: React.FC<{ columns: string[]; rows: Record<string, unknown>[] }> = ({ columns, rows }) => {
+const DataTable: React.FC<{
+  columns: string[]
+  rows: Record<string, unknown>[]
+  theme?: 'light' | 'dark'
+}> = ({ columns, rows, theme = 'light' }) => {
   if (!columns.length) return null
+
+  const handleExportCSV = () => {
+    const title = `data_export_${new Date().toISOString().split('T')[0]}`
+    exportTableToCSV(columns, rows, title)
+  }
+
   return (
-    <div className="w-full overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-      <table className="w-full text-sm text-left">
-        <thead className="bg-slate-50 border-b border-slate-200">
-          <tr>
-            {columns.map(col => (
-              <th key={col} className="px-4 py-3 font-semibold text-slate-700 whitespace-nowrap capitalize">
-                {col.replace(/_/g, ' ')}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.slice(0, 200).map((row, i) => (
-            <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
-              {columns.map(col => {
-                const raw = row[col]
-                const formatted = autoFormatValue(col, raw)
-                const isRupee = String(formatted).startsWith('₹')
-                return (
-                  <td
-                    key={col}
-                    className={`px-4 py-2 whitespace-nowrap max-w-xs truncate ${
-                      isRupee ? 'text-emerald-700 font-semibold text-right tabular-nums' : 'text-slate-600'
-                    }`}
-                  >
-                    {indianiseCurrencyText(String(formatted))}
-                  </td>
-                )
-              })}
+    <div className={`w-full rounded-xl border shadow-sm ${
+      theme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'
+    }`}>
+      {/* Export button */}
+      <div className="flex justify-end p-2">
+        <button
+          onClick={handleExportCSV}
+          className={`px-3 py-1.5 text-xs font-medium rounded-lg flex items-center gap-1.5 transition-colors ${
+            theme === 'dark'
+              ? 'bg-slate-700 text-slate-200 hover:bg-slate-600'
+              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+          }`}
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          Export CSV
+        </button>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm text-left">
+          <thead className={`border-b ${
+            theme === 'dark' ? 'bg-slate-700 border-slate-600' : 'bg-slate-50 border-slate-200'
+          }`}>
+            <tr>
+              {columns.map(col => (
+                <th key={col} className={`px-4 py-3 font-semibold whitespace-nowrap capitalize ${
+                  theme === 'dark' ? 'text-slate-200' : 'text-slate-700'
+                }`}>
+                  {col.replace(/_/g, ' ')}
+                </th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.slice(0, 200).map((row, i) => (
+              <tr key={i} className={`border-b ${
+                theme === 'dark'
+                  ? i % 2 === 0 ? 'bg-slate-800' : 'bg-slate-750 border-slate-700'
+                  : i % 2 === 0 ? 'bg-white' : 'bg-slate-50'
+              }`}>
+                {columns.map(col => {
+                  const raw = row[col]
+                  const formatted = autoFormatValue(col, raw)
+                  const isRupee = String(formatted).startsWith('₹')
+                  return (
+                    <td
+                      key={col}
+                      className={`px-4 py-2 whitespace-nowrap max-w-xs truncate ${
+                        isRupee
+                          ? theme === 'dark' ? 'text-emerald-400 font-semibold text-right tabular-nums' : 'text-emerald-700 font-semibold text-right tabular-nums'
+                          : theme === 'dark' ? 'text-slate-300' : 'text-slate-600'
+                      }`}
+                    >
+                      {indianiseCurrencyText(String(formatted))}
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       {rows.length > 200 && (
-        <div className="px-4 py-2 text-xs text-slate-500 bg-slate-50 border-t">
+        <div className={`px-4 py-2 text-xs border-t ${
+          theme === 'dark' ? 'text-slate-400 bg-slate-700 border-slate-600' : 'text-slate-500 bg-slate-50 border-slate-200'
+        }`}>
           Showing 200 of {rows.length.toLocaleString('en-IN')} rows
         </div>
       )}

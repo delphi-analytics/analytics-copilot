@@ -10,9 +10,10 @@ interface Props {
   onFollowUp: (question: string) => void
   onEdit?: (messageId: string, content: string) => void
   onDelete?: (messageId: string) => void
+  theme?: 'light' | 'dark'
 }
 
-export const ChatMessageComponent: React.FC<Props> = ({ message, onFollowUp, onEdit, onDelete }) => {
+export const ChatMessageComponent: React.FC<Props> = ({ message, onFollowUp, onEdit, onDelete, theme = 'light' }) => {
   const [showSQL, setShowSQL] = useState(false)
 
   if (message.role === 'user') {
@@ -128,6 +129,7 @@ export const ChatMessageComponent: React.FC<Props> = ({ message, onFollowUp, onE
           vizType={message.viz_type || null}
           columns={message.columns}
           rows={message.rows}
+          theme={theme}
         />
       )}
 

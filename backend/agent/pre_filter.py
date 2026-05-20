@@ -1,44 +1,25 @@
 """
-Rule-based Pre-Filter for Intent Classification
-Catches greetings, off-topic, and analytical questions BEFORE LLM call.
-Saves tokens and provides instant responses for common patterns.
+Minimal Pre-Filter for Intent Classification
+ONLY catches the most obvious patterns BEFORE LLM call.
+The LLM handles all actual classification - this just saves tokens for obvious cases.
 """
 from __future__ import annotations
 import re
 
-# Greeting patterns - instant response, no SQL needed
-GREETING_PATTERNS = [
-    r"^(hi|hello|hey|hi there|hello there)\b",
-    r"^(good morning|good afternoon|good evening)",
-    r"^how are you( doing)?\?",
-    r"^(what's up|sup)\b",
-    r"^(who are you|what are you)\b",
-    r"^what can you do\?",
-    r"^help\b",
-]
-
-# Analytical/conversational patterns - need data + narrative response
-ANALYTICAL_KEYWORDS = [
-    "why is", "why did", "why does", "why are",
-    "what caused", "what's the reason", "reason for",
-    "explain", "explain to me", "elaborate on",
-    "how is", "how did", "how does",
-    "tell me more about", "what about",
-    "insight", "analysis", "breakdown",
-    "driving", "factors", "contributing to",
-    "trending", "performance",
-]
-
-# Off-topic topics the system shouldn't touch
-OFF_TOPICS = [
-    "weather", "politics", "sports", "news", "joke",
-    "recipe", "cooking", "movie", "song",
+# ONLY the most obvious greeting patterns - let LLM handle everything else
+# These are strictly for common greetings that shouldn't require any LLM processing
+OBVIOUS_GREETINGS = [
+    r"^(hi|hello|hey)\b[!.]*$",
+    r"^gm[!.]*$",
+    r"^gn[!.]*$",
 ]
 
 
 def pre_classify(question: str) -> dict:
     """
-    Classify question using rules before LLM call.
+    Minimal pre-classification using simple rules.
+    ONLY catches obvious greetings - everything else goes to LLM.
+
     Returns: {"type": str, "confidence": float, "skip_llm": bool}
     """
     if not question:
@@ -46,8 +27,8 @@ def pre_classify(question: str) -> dict:
 
     q = question.lower().strip()
 
-    # Check greetings
-    for pattern in GREETING_PATTERNS:
+    # Check for obvious greetings ONLY (very strict matching)
+    for pattern in OBVIOUS_GREETINGS:
         if re.match(pattern, q, re.IGNORECASE):
             return {
                 "type": "greeting",
@@ -56,35 +37,15 @@ def pre_classify(question: str) -> dict:
                 "response": _get_greeting_response()
             }
 
-    # Check off-topic
-    for topic in OFF_TOPICS:
-        if topic in q:
-            return {
-                "type": "off_topic",
-                "confidence": 0.9,
-                "skip_llm": True,
-                "response": f"I'm an analytics assistant focused on your data. I can't help with {topic}, but I'd love to help you explore your sales, inventory, or customer data!"
-            }
-
-    # Check analytical/why questions
-    for keyword in ANALYTICAL_KEYWORDS:
-        if keyword in q:
-            # Also check if they're asking about "this" or "it" (follow-up)
-            is_followup = any(word in q for word in ["this", "it", "that", "these", "those"])
-            return {
-                "type": "analytical_question",
-                "confidence": 0.8,
-                "skip_llm": False,  # Still need LLM for narrative
-                "is_followup": is_followup,
-                "needs_data": True,  # Should fetch data for context
-            }
-
-    # Data query - send to full pipeline
+    # Let LLM handle everything else - including:
+    # - Conversational questions ("what can you do", "who are you")
+    # - Analytical questions ("why is", "explain")
+    # - Data queries
+    # - Off-topic questions
     return {
-        "type": "data_query",
+        "type": "llm_classify",
         "confidence": 0.5,
         "skip_llm": False,
-        "needs_data": True,
     }
 
 

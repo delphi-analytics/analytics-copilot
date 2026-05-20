@@ -55,9 +55,18 @@ class ClickHouseConnector:
                     elif val is None:
                         row_dict[col] = None
                     else:
-                        try:
-                            row_dict[col] = float(val) if isinstance(val, (int, float)) else str(val)
-                        except Exception:
+                        # Preserve SKU/ID columns as strings, not numbers
+                        col_lower = col.lower()
+                        is_id_column = any(id_col in col_lower for id_col in [
+                            "sku", "id", "_id", "code", "pin", "zip"
+                        ])
+
+                        if is_id_column:
+                            # Always convert IDs/SKUs to string to preserve leading zeros and prevent numeric conversion
+                            row_dict[col] = str(val) if val is not None else None
+                        elif isinstance(val, (int, float)):
+                            row_dict[col] = float(val) if isinstance(val, float) else int(val)
+                        else:
                             row_dict[col] = str(val)
                 rows.append(row_dict)
             return {"columns": columns, "rows": rows, "row_count": len(rows)}
