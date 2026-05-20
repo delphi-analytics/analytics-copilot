@@ -30,7 +30,7 @@ import structlog
 
 log = structlog.get_logger(__name__)
 
-CONTEXT_FILE = Path("/tmp/dvc_metadata/db_intelligence.json")
+CONTEXT_FILE = Path(__file__).parent.parent / "data" / "db_intelligence.json"
 CONTEXT_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 REFRESH_HOURS = 24         # auto-refresh every 24 hours
@@ -436,7 +436,7 @@ def start_background_refresh() -> None:
         time.sleep(5)
         log.info("db_intelligence.initial_scan_starting")
         try:
-            get_db_context(force_refresh=True)
+            get_db_context(force_refresh=False)
             log.info("db_intelligence.initial_scan_complete")
         except Exception as exc:
             log.error("db_intelligence.initial_scan_failed", error=str(exc))

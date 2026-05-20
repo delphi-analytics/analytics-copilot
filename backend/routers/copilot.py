@@ -108,14 +108,61 @@ async def query(payload: QueryRequest, db: DbDep) -> QueryResponse:
     # Check LLM cache first (Canary pattern — 80% latency reduction on repeats)
     cache = _get_llm_cache()
     cached = await cache.get_async(question=payload.question, datasource_id=payload.datasource_id)
-    if cached and not payload.conversation_id:
-        # Only use cache for fresh conversations (not follow-ups)
-        # Note: run_analytics_agent is imported at module level — do NOT re-import here
-        cache_fields = {k: v for k, v in cached.items()
-                        if k in QueryResponse.model_fields}
+    if cached:
+        # Get or create conversation
+        conversation_id = payload.conversation_id
+        conversation = None
+
+        if conversation_id:
+            result = await db.execute(select(Conversation).where(Conversation.id == conversation_id))
+            conversation = result.scalar_one_or_none()
+
+        if not conversation:
+            conversation = Conversation(
+                id=conversation_id or str(uuid.uuid4()),
+                user_id=payload.user_id,
+                datasource_id=payload.datasource_id,
+                title=payload.question[:100],
+            )
+            db.add(conversation)
+            await db.flush()
+            conversation_id = conversation.id
+
+        # Save user message
+        user_msg = Message(
+            id=str(uuid.uuid4()),
+            conversation_id=conversation_id,
+            role="user",
+            content=payload.question,
+        )
+        db.add(user_msg)
+
+        # Save cached assistant message to database
+        cache_fields = {k: v for k, v in cached.items() if k in QueryResponse.model_fields}
+        assistant_msg = Message(
+            id=str(uuid.uuid4()),
+            conversation_id=conversation_id,
+            role="assistant",
+            content=cache_fields.get("text", ""),
+            sql_query=cache_fields.get("sql", ""),
+            query_results={
+                "columns": cache_fields.get("columns", []),
+                "rows": cache_fields.get("rows", [])[:50],
+                "row_count": cache_fields.get("row_count", 0),
+            },
+            viz_config=cache_fields.get("chart"),
+            insights=cache_fields.get("insights", []),
+            follow_up_questions=cache_fields.get("follow_up_questions", []),
+            model_used=cache_fields.get("model_used", "cache"),
+            latency_ms=0,
+            error=None,
+        )
+        db.add(assistant_msg)
+        await db.commit()
+
         return QueryResponse(
-            conversation_id=str(uuid.uuid4()),
-            message_id=str(uuid.uuid4()),
+            conversation_id=conversation_id,
+            message_id=assistant_msg.id,
             **cache_fields,
         )
 

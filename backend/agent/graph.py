@@ -122,6 +122,47 @@ async def run_analytics_agent(
     """
     t0 = time.perf_counter()
 
+    from backend.agent.memory import vector_memory
+
+    cached_sql = None
+    if vector_memory.enabled:
+        cached_payload = vector_memory.search_semantic_cache(question, threshold=0.92)
+        if cached_payload and cached_payload.get("sql"):
+            matched_q = cached_payload.get("question", "")
+            
+            # Semantic cache validation: ensure requested years and months match
+            import re
+            def _validate_match(q1: str, q2: str) -> bool:
+                curr_years = set(re.findall(r'\b(20[12]\d)\b', q1))
+                match_years = set(re.findall(r'\b(20[12]\d)\b', q2))
+                if curr_years != match_years:
+                    return False
+                months = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december',
+                          'jan', 'feb', 'mar', 'apr', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+                q1_lower, q2_lower = q1.lower(), q2.lower()
+                q1_months = {m for m in months if re.search(r'\b' + m + r'\b', q1_lower)}
+                q2_months = {m for m in months if re.search(r'\b' + m + r'\b', q2_lower)}
+                if q1_months != q2_months:
+                    return False
+                q1_digit_months = set(re.findall(r'\b(0[1-9]|1[0-2])[-/](20[12]\d)\b', q1) + re.findall(r'\b(20[12]\d)[-/](0[1-9]|1[0-2])\b', q1))
+                q2_digit_months = set(re.findall(r'\b(0[1-9]|1[0-2])[-/](20[12]\d)\b', q2) + re.findall(r'\b(20[12]\d)[-/](0[1-9]|1[0-2])\b', q2))
+                if q1_digit_months != q2_digit_months:
+                    return False
+                
+                # Reject matches if one question asks for a trend/chart and the other doesn't
+                q1_is_trend = any(w in q1_lower for w in ["trend", "daily", "weekly", "chart", "graph", "plot", "map", "viz", "visualization"])
+                q2_is_trend = any(w in q2_lower for w in ["trend", "daily", "weekly", "chart", "graph", "plot", "map", "viz", "visualization"])
+                if q1_is_trend != q2_is_trend:
+                    return False
+                
+                return True
+                
+            if _validate_match(question, matched_q):
+                cached_sql = cached_payload["sql"]
+                log.info("agent.semantic_cache_match", question=question, matched=matched_q)
+            else:
+                log.info("agent.semantic_cache_match_rejected_due_to_date_mismatch", question=question, matched=matched_q)
+
     initial_state: AnalyticsState = {
         "session_id": session_id,
         "conversation_id": conversation_id,
@@ -131,6 +172,8 @@ async def run_analytics_agent(
         "user_id": user_id,
         "step_errors": [],
     }
+    if cached_sql:
+        initial_state["sql_query"] = cached_sql
 
     try:
         graph = get_graph()
@@ -151,6 +194,8 @@ async def run_analytics_agent(
         return result
 
     except Exception as exc:
+        import traceback
+        traceback.print_exc()
         total_ms = int((time.perf_counter() - t0) * 1000)
         log.error("agent.failed", error=str(exc), total_ms=total_ms)
         return {

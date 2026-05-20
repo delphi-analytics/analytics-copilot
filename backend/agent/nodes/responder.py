@@ -71,31 +71,60 @@ async def compose_response(state: AnalyticsState) -> AnalyticsState:
             },
         }
 
-    # Build text response — replace $ with ₹ in all values
-    def _inr(v: str) -> str:
-        import re
-        return re.sub(r'\$\s?([\d,]+(?:\.\d+)?)', lambda m: f'₹{m.group(1)}', str(v))
+    # Build beautiful executive conversational narrative summary
+    response_text = ""
+    if not error and row_count > 0:
+        summary_prompt = f"""You are Limese's Senior Analytics Copilot. Write a highly professional, conversational executive summary answering the user's question based on the actual metrics and findings.
 
-    insights_text = "\n".join(f"* {_inr(i)}" for i in insights[:3]) if insights else ""
-    metrics_text = " | ".join(f"**{k}**: {_inr(v)}" for k, v in list(key_metrics.items())[:4]) if key_metrics else ""
-    anomaly_text = f"\n⚠️ Notable: {anomalies[0]}" if anomalies else ""
+User Question: "{question}"
+Key Metrics: {key_metrics}
+Raw Bullet Point Insights: {insights}
+Total Rows Returned: {row_count}
 
-    response_parts = []
-    if metrics_text:
-        response_parts.append(metrics_text)
-    if insights_text:
-        response_parts.append(insights_text)
-    if anomaly_text:
-        response_parts.append(anomaly_text)
+RULES:
+1. Write a direct, polished narrative summary in 1-2 paragraphs max (3-5 sentences total).
+2. DO NOT write lists, bullet points, or raw tables — the UI displays bullet points separately under "Key Insights".
+3. Bold key metrics (e.g. **₹16.21 Cr** or **1.4L units**).
+4. Use ₹ (Rupee) for Indian currency format. Never use USD or $ unless specifically asked.
+5. Keep the tone conversational, helpful, and highly strategic for a business owner."""
 
-    response_text = "\n\n".join(response_parts) if response_parts else f"Here are the results ({row_count} rows found)."
+        try:
+            resp = await call_llm(
+                messages=[{"role": "user", "content": summary_prompt}],
+                task="general",
+                max_tokens=350,
+                temperature=0.3,
+            )
+            response_text = resp.content.strip()
+        except Exception as exc:
+            log.warning("responder.summary_llm_failed", error=str(exc))
 
-    if row_count == 0:
-        response_text = "No data found for your query. Try adjusting the filters or time range."
+    # Fallback to narrative paragraph if LLM fails or returned empty
+    if not response_text and not error:
+        if row_count == 0:
+            response_text = "No data found for your query. Try adjusting the filters or time range."
+        else:
+            metrics_part = ""
+            if key_metrics:
+                metrics_part = " showing " + ", ".join(f"**{k}** of {v}" for k, v in list(key_metrics.items())[:3])
+            
+            response_text = f"I've analyzed the data for **{question}** and retrieved **{row_count}** matching records{metrics_part}. "
+            if insights:
+                # Remove leading bullet points/dashes if present
+                clean_ins0 = insights[0].lstrip("*-• ").strip()
+                response_text += f"A key takeaway from the analysis is: {clean_ins0}. "
+                if len(insights) > 1:
+                    clean_ins1 = insights[1].lstrip("*-• ").strip()
+                    # Lowercase first character if appropriate
+                    if clean_ins1 and clean_ins1[0].isupper() and not clean_ins1.startswith("₹"):
+                        clean_ins1 = clean_ins1[0].lower() + clean_ins1[1:]
+                    response_text += f"Additionally, {clean_ins1}."
 
     # Generate follow-up questions
+    sql = state.get("sql_query", "")
+    columns = query_results.get("columns", [])
     try:
-        follow_ups = await _generate_follow_ups(question, insights, viz_type)
+        follow_ups = await _generate_follow_ups(question, insights, viz_type, sql, columns)
     except Exception:
         follow_ups = _default_follow_ups(question)
 
@@ -138,33 +167,125 @@ async def compose_response(state: AnalyticsState) -> AnalyticsState:
     return {**state, "response_text": response_text, "follow_up_questions": follow_ups, "final_response": final_response}
 
 
-async def _generate_follow_ups(question: str, insights: list, viz_type: str) -> list[str]:
-    prompt = f"""A user asked: "{question}"
-Key insights found: {insights[:2]}
-Chart type shown: {viz_type}
+async def _generate_follow_ups(question: str, insights: list, viz_type: str, sql: str = "", columns: list = []) -> list[str]:
+    """
+    Generate follow-up questions that are GUARANTEED to be answerable by the system.
+    Grounds suggestions in the actual database schema, known columns, and domain context.
+    """
+    import re
 
-Suggest 3 natural follow-up questions they would likely ask next.
-Return as JSON array: ["question 1", "question 2", "question 3"]
-Keep them short (under 10 words each) and directly related."""
+    # ── Extract time scope from SQL so follow-ups stay in the same period ──────
+    year_hints = re.findall(r"'(20\d\d)(?:-\d\d)?(?:-\d\d)?'", sql)
+    year_scope = ", ".join(sorted(set(year_hints))) if year_hints else "the same period as the query"
 
-    resp = await call_llm(
-        messages=[{"role": "user", "content": prompt}],
-        task="routing",
-        max_tokens=150,
-        temperature=0.4,
-    )
-    raw = resp.content.strip()
-    if "```" in raw:
-        raw = raw.split("```")[1].replace("json", "").strip()
-    return json.loads(raw)[:3]
+    # ── Extract which table(s) were queried ────────────────────────────────────
+    tables_used = []
+    for tname in ["combined_sales_final", "product_master", "inventory_sales_overview_new",
+                   "shopify_orders", "unicomm_sales_final", "zoho_sales_final"]:
+        if tname in sql.lower():
+            tables_used.append(tname)
+    tables_str = ", ".join(tables_used) if tables_used else "combined_sales_final"
+
+    # ── Domain knowledge: always-available dimensions ─────────────────────────
+    KNOWN_DIMENSIONS = """
+AVAILABLE DIMENSIONS (always queryable via combined_sales_final + product_master JOIN):
+- sales_platform: 'Nykaa Beauty', 'Myntra_PPMP', 'Shopify', 'Unicomm', 'Zoho'
+- category_l1: 'Skincare', 'Makeup', 'Haircare'
+- category_l2: sub-category (Face Wash, Serum, Foundation, etc.)
+- item_name: individual product name (from product_master)
+- internal_sku: unique product code
+- date_created: order date (for monthly/daily grouping)
+- final_status: order status (already filtered out cancelled/returned)
+
+AVAILABLE METRICS:
+- row_subtotal → revenue/sales (SUM)
+- quantity_ordered → units sold (SUM)
+- COUNT(*) → number of orders
+"""
+
+    cols_str = ", ".join(columns) if columns else "revenue, platform"
+
+    prompt = f"""You are generating follow-up questions for an analytics dashboard about Limese beauty brand sales.
+
+User's original question: "{question}"
+SQL query used tables: {tables_str}
+Columns in the result: {cols_str}
+Time period filtered: {year_scope}
+Chart shown: {viz_type}
+Key insight: {insights[0] if insights else 'N/A'}
+
+{KNOWN_DIMENSIONS}
+
+Generate exactly 3 follow-up questions. Each question MUST:
+1. Be directly answerable using the dimensions and metrics listed above via a single SQL query
+2. Stay within the same time period ({year_scope}) unless asking for a comparison
+3. Be a natural drill-down or comparison from the original question
+4. Be specific — use real platform names, category names, or metric names from above (not vague phrases like "break this down further")
+5. Be under 12 words
+
+GOOD examples (specific, answerable):
+- "Show revenue by category_l1 on Nykaa Beauty in {year_scope}"
+- "Which product had highest units sold in {year_scope}?"
+- "Compare Skincare vs Makeup revenue in {year_scope}"
+- "Show monthly revenue trend for Nykaa Beauty in {year_scope}"
+
+BAD examples (vague, unanswerable):
+- "Break this down further" ← too vague
+- "Show me more details" ← not specific
+- "Compare with other regions" ← no region column exists
+
+Return ONLY a JSON array of exactly 3 strings: ["question 1", "question 2", "question 3"]"""
+
+    try:
+        resp = await call_llm(
+            messages=[{"role": "user", "content": prompt}],
+            task="routing",
+            max_tokens=200,
+            temperature=0.2,
+        )
+        raw = resp.content.strip()
+        if not raw:
+            raise ValueError("Empty LLM response")
+        if "```" in raw:
+            raw = raw.split("```")[1].replace("json", "").strip()
+        result = json.loads(raw)
+        if isinstance(result, list) and len(result) >= 1:
+            return [q for q in result if isinstance(q, str)][:3]
+        raise ValueError("Invalid format")
+    except Exception:
+        return _default_follow_ups(question, year_scope)
 
 
-def _default_follow_ups(question: str) -> list[str]:
+def _default_follow_ups(question: str, year_scope: str = "2025") -> list[str]:
+    """Deterministic fallback follow-ups — always answerable."""
+    q_lower = question.lower()
+    # Pick context-relevant fallbacks
+    if "nykaa" in q_lower:
+        return [
+            f"Show Nykaa Beauty revenue by category in {year_scope}",
+            f"Which product sold most on Nykaa in {year_scope}?",
+            f"Compare Nykaa vs Myntra revenue in {year_scope}",
+        ]
+    if "myntra" in q_lower:
+        return [
+            f"Show Myntra revenue by category in {year_scope}",
+            f"Compare Myntra vs Nykaa revenue in {year_scope}",
+            f"Which SKU performed best on Myntra in {year_scope}?",
+        ]
+    if "skincare" in q_lower or "makeup" in q_lower or "haircare" in q_lower:
+        return [
+            f"Show monthly revenue trend by category in {year_scope}",
+            f"Which platform drives most Skincare sales in {year_scope}?",
+            f"Compare category revenue across platforms in {year_scope}",
+        ]
+    # Generic but always answerable defaults
     return [
-        "Show this as a different chart type",
-        "Break this down by category",
-        "Compare with the previous period",
+        f"Show revenue by platform in {year_scope}",
+        f"Which product had highest sales in {year_scope}?",
+        f"Show monthly revenue trend in {year_scope}",
     ]
+
+
 
 
 async def _compose_analytical_response(state: AnalyticsState) -> dict:
@@ -249,30 +370,11 @@ After your explanation, suggest 2-3 specific follow-up questions."""
         }
 
 
-async def _generate_analytical_followups(question: str, key_metrics: dict, insights: list) -> list[str]:
-    """Generate contextual follow-up questions based on the analytical discussion."""
-    prompt = f"""The user asked: "{question}"
-
-We discussed these metrics: {list(key_metrics.keys())[:5]}
-With insights: {insights[:2]}
-
-Suggest 3 natural follow-up questions they'd likely ask next to deepen their understanding.
-Return as JSON array: ["question 1", "question 2", "question 3"]"""
-
+async def _generate_analytical_followups(question: str, key_metrics: dict, insights: list, sql: str = "") -> list[str]:
+    """Delegate to the main schema-aware follow-up generator for consistency."""
     try:
-        resp = await call_llm(
-            messages=[{"role": "user", "content": prompt}],
-            task="routing",
-            max_tokens=150,
-            temperature=0.3,
-        )
-        raw = resp.content.strip()
-        if "```" in raw:
-            raw = raw.split("```")[1].replace("json", "").strip()
-        return json.loads(raw)[:3]
-    except:
-        return [
-            "Break this down further by category",
-            "Compare with the previous period",
-            "What are the top contributors?"
-        ]
+        columns = list(key_metrics.keys())
+        return await _generate_follow_ups(question, insights, "table", sql, columns)
+    except Exception:
+        return _default_follow_ups(question)
+

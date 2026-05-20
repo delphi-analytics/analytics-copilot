@@ -1,7 +1,15 @@
 """
 LLM routing for the Data Visualization Copilot.
 Uses LiteLLM for provider-agnostic calls.
-Groq (free) by default — upgrade to Claude/GPT via .env.
+
+Model assignment by task:
+  routing  → groq/8B (fast, cheap, intent classification)
+  sql      → groq/70B → groq/8B → gemini-2.5-flash → gemini-flash-latest
+  analysis → groq/70B → groq/8B → gemini-2.5-flash → gemini-flash-latest
+  general  → same as sql
+
+On rate limit: retries same model once (0.5s), then falls to next model.
+For non-sql tasks: returns stub on total failure instead of raising.
 """
 from __future__ import annotations
 import asyncio
@@ -70,6 +78,47 @@ def _get_key(model: str) -> str | None:
     return None
 
 
+def _build_fallback_chain(primary: str, task: str) -> list[str]:
+    """
+    Build the ordered fallback model list for a given task.
+
+    routing  → fast 8B only (+ gemini if available)
+    sql      → smart 70B → fast 8B → gemini-2.5-flash → gemini-flash-latest
+    analysis → smart 70B → fast 8B → gemini-2.5-flash → gemini-flash-latest
+    general  → same as sql
+    """
+    chain: list[str] = [primary]
+
+    if task == "routing":
+        # Routing only needs a fast model; add Gemini 1.5 Flash as last resort (1500 req/day)
+        if settings.gemini_api_key and "gemini" not in primary:
+            chain.append("gemini/gemini-1.5-flash")
+        return chain
+
+    # For sql / analysis / general:
+    # Add Groq 8B as second option (handles simpler queries)
+    fast = settings.llm_fast_model
+    if fast not in chain:
+        chain.append(fast)
+
+    # Add Gemini models as further fallbacks
+    # gemini-1.5-flash: 1,500 req/day free — much more generous than 2.5-flash (20/day)
+    # gemini-1.5-pro: 50 req/day free — higher quality, good for complex SQL
+    if settings.gemini_api_key:
+        if "gemini/gemini-1.5-flash" not in chain:
+            chain.append("gemini/gemini-1.5-flash")
+        if "gemini/gemini-1.5-pro" not in chain:
+            chain.append("gemini/gemini-1.5-pro")
+
+    # Mistral / DeepSeek as last resort if keys exist
+    if settings.deepseek_api_key and "deepseek" not in primary:
+        chain.append("deepseek/deepseek-coder")
+    if settings.mistral_api_key and "mistral" not in primary:
+        chain.append("mistral/mistral-large-latest")
+
+    return chain
+
+
 async def call_llm(
     messages: list[dict],
     model: str | None = None,
@@ -78,32 +127,22 @@ async def call_llm(
     task: str = "general",
 ) -> LLMResponse:
     """
-    Single LLM call with automatic fallback and rate-limit retry.
-    model=None → uses smart model (Groq 70B) for SQL/analysis, fast model for routing.
-    On rate limit: waits 15s and retries once, then falls back to next model.
+    Single LLM call with automatic multi-model fallback.
+
+    task options:
+      "routing"  — fast 8B model (intent/schema selection)
+      "sql"      — smart 70B model (SQL generation) — raises on total failure
+      "analysis" — smart 70B model (insights) — returns stub on total failure
+      "general"  — same as sql
     """
     if model is None:
         model = settings.llm_fast_model if task == "routing" else settings.llm_smart_model
 
-    # Build fallback chain with multiple FREE providers:
-    # Order: retry → deepseek (best SQL, ~free) → mistral → gemini → cohere
-    # This ensures we always have a working model even if some hit rate limits
-    models_to_try = [model]
-    is_large_model = "70b" in model or "versatile" in model or "pro" in model
-    if not is_large_model and settings.llm_fallback_model != model:
-        models_to_try.append(settings.llm_fallback_model)  # only add 8B fallback for routing tasks
-    if settings.deepseek_api_key and "deepseek" not in model:
-        models_to_try.append("deepseek/deepseek-coder")  # Best for SQL, very cheap
-    if settings.mistral_api_key and "mistral" not in model:
-        models_to_try.append("mistral/mistral-large-latest")  # Good quality, free tier
-    if settings.gemini_api_key and "gemini" not in model and "gemini/gemini-1.5-flash" not in models_to_try:
-        models_to_try.append("gemini/gemini-1.5-flash")  # Free, 1M context
-    if settings.cohere_api_key and "cohere" not in model and "command" not in model:
-        models_to_try.append("cohere/command-r-plus-08-2024")  # Free tier available
-    last_error = None
+    models_to_try = _build_fallback_chain(model, task)
+    last_error: Exception | None = None
 
     for m in models_to_try:
-        # Retry once on rate limit with backoff
+        # Allow one retry on rate limit before moving to next model
         for attempt in range(2):
             try:
                 t0 = time.perf_counter()
@@ -136,11 +175,16 @@ async def call_llm(
                 err_str = str(exc).lower()
                 if "rate_limit" in err_str or "rate limit" in err_str or "429" in err_str:
                     if attempt == 0:
-                        wait = 15  # wait 15s on first rate limit hit
-                        log.warning("llm.rate_limited", model=m, wait_seconds=wait)
-                        await asyncio.sleep(wait)
-                        continue  # retry same model
-                log.warning("llm.failed", model=m, attempt=attempt, error=str(exc)[:100])
-                break  # try next model
+                        log.warning("llm.rate_limited", model=m, wait_seconds=0.5)
+                        await asyncio.sleep(0.5)
+                        continue  # retry same model once
+                log.warning("llm.failed", model=m, attempt=attempt, error=str(exc)[:120])
+                break  # move to next model
 
-    raise RuntimeError(f"All LLM models failed. Last: {last_error}")
+    # SQL tasks must succeed — callers handle the exception
+    if task == "sql":
+        raise RuntimeError(f"All LLM models failed for SQL generation. Last error: {last_error}")
+
+    # For routing/analysis/general — return a stub so the pipeline doesn't crash
+    log.warning("llm.all_failed_returning_stub", task=task, last_error=str(last_error)[:120])
+    return LLMResponse(content="", model="stub", input_tokens=0, output_tokens=0, latency_ms=0)

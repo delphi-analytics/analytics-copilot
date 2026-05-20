@@ -41,6 +41,102 @@ def _compute_basic_stats(rows: list, columns: list) -> dict:
     return stats
 
 
+def _generate_rule_based_fallback_insights(rows: list, columns: list, basic_stats: dict, question: str) -> dict:
+    """Generate high-quality business insights dynamically client-side when the LLM is rate-limited."""
+    insights = []
+    key_metrics = {}
+    
+    def local_fmt(val, is_money_metric):
+        abs_val = abs(val)
+        sign = "-" if val < 0 else ""
+        prefix = "₹" if is_money_metric else ""
+        if abs_val >= 1_00_00_000:
+            return f"{sign}{prefix}{(abs_val / 1_00_00_000):.2f} Cr"
+        elif abs_val >= 1_00_000:
+            return f"{sign}{prefix}{(abs_val / 1_00_000):.2f} L"
+        elif abs_val >= 1_000:
+            return f"{sign}{prefix}{(abs_val / 1_000):.1f}K"
+        return f"{sign}{prefix}{abs_val:,.2f}"
+
+    # 1. Populate key metrics dynamically
+    for col, stats in basic_stats.items():
+        col_lower = col.lower()
+        is_money = any(kw in col_lower for kw in ["revenue", "sales", "price", "subtotal", "amount", "income", "value"])
+        key_metrics[col] = local_fmt(stats.get("total", 0), is_money)
+
+    # 2. Derive dynamic bullet point insights
+    str_cols = []
+    num_cols = list(basic_stats.keys())
+    for col in columns:
+        if col not in num_cols:
+            str_cols.append(col)
+
+    # Peak finding
+    if str_cols and num_cols:
+        dim_col = str_cols[0]
+        val_col = num_cols[0]
+        is_money = any(kw in val_col.lower() for kw in ["revenue", "sales", "price", "subtotal", "amount", "income", "value"])
+        
+        peak_row = None
+        peak_val = -float("inf")
+        for r in rows:
+            try:
+                v = float(r.get(val_col, 0))
+                if v > peak_val:
+                    peak_val = v
+                    peak_row = r
+            except Exception:
+                pass
+                
+        if peak_row and peak_val > -float("inf"):
+            peak_dim = peak_row.get(dim_col, "Unknown")
+            unit_str = "revenue" if is_money else "units/volume"
+            insights.append(f"Peak {unit_str} occurred in **{peak_dim}** at **{local_fmt(peak_val, is_money)}**.")
+
+    # Growth rate finding
+    if len(rows) >= 2 and num_cols and str_cols and any(ti in str_cols[0].lower() for ti in ["month", "date", "year", "day", "period"]):
+        dim_col = str_cols[0]
+        val_col = num_cols[0]
+        is_money = any(kw in val_col.lower() for kw in ["revenue", "sales", "price", "subtotal", "amount", "income", "value"])
+        try:
+            start_val = float(rows[0].get(val_col, 0))
+            end_val = float(rows[-1].get(val_col, 0))
+            if start_val > 0:
+                growth = ((end_val - start_val) / start_val) * 100
+                direction = "growth" if growth >= 0 else "decline"
+                insights.append(f"Trend shows an overall **{abs(growth):.1f}% {direction}** from {rows[0].get(dim_col)} to {rows[-1].get(dim_col)}.")
+        except Exception:
+            pass
+
+    # Category comparison insight if category_l1 is present
+    if "category_l1" in columns and num_cols:
+        cats = list(set(r.get("category_l1") for r in rows if r.get("category_l1")))
+        if len(cats) >= 2:
+            cat_sums = {}
+            val_col = num_cols[0]
+            is_money = any(kw in val_col.lower() for kw in ["revenue", "sales", "price", "subtotal", "amount", "income", "value"])
+            for r in rows:
+                c = r.get("category_l1")
+                if c:
+                    try:
+                        cat_sums[c] = cat_sums.get(c, 0) + float(r.get(val_col, 0))
+                    except Exception:
+                        pass
+            if cat_sums:
+                sorted_cats = sorted(cat_sums.items(), key=lambda x: x[1], reverse=True)
+                insights.append(f"**{sorted_cats[0][0]}** leads performance with a total of **{local_fmt(sorted_cats[0][1], is_money)}**, followed by **{sorted_cats[1][0]}** at **{local_fmt(sorted_cats[1][1], is_money)}**.")
+
+    # General row count backup
+    insights.append(f"Retrieved a total of **{len(rows)}** records matching your query.")
+
+    return {
+        "insights": insights,
+        "key_metrics": key_metrics,
+        "anomalies": [],
+        "summary_sentence": f"Found {len(rows)} records.",
+    }
+
+
 async def analyze_insights(state: AnalyticsState) -> AnalyticsState:
     query_results = state.get("query_results", {})
     intent = state.get("intent", {})
@@ -103,6 +199,10 @@ CRITICAL REASONING & CONTENT RULES:
    - Every single bullet point in the "insights" list MUST represent a specific, concrete reason, factor, or driver (e.g., specific platform drop, category decline, volume decrease, seasonal effect) based on the data.
    - Do NOT just summarize the chart or repeat overall statistics. Answer the "why" or "what causes this" directly using the data points.
 
+CRITICAL FORMATTING RULES:
+1. Do NOT put digits, numbers, values, or dates in double quotes (e.g. do NOT write "2025-11" or "23.81").
+2. Instead, ALWAYS make all digits, percentages, monetary amounts, and dates BOLD using markdown asterisks (e.g., write **2025-11**, **₹23.81 Cr**, **30.2%**).
+
 IMPORTANT: Use ₹ (Rupee) symbol ONLY for monetary values (Revenue, Sales, Spend, Profit).
 Do NOT use ₹ for counts (Orders, Units, Users, Tickets).
 Format large numbers in Indian style: e.g. ₹23.8 Cr (monetary), 2.8 L units (count)."""
@@ -115,22 +215,39 @@ Format large numbers in Indian style: e.g. ₹23.8 Cr (monetary), 2.8 L units (c
             temperature=0.2,
         )
         raw = resp.content.strip()
+        if not raw:
+            raise ValueError("Empty LLM response")
         if "```" in raw:
             raw = raw.split("```")[1].replace("json", "").strip()
         analysis = json.loads(raw)
     except Exception as exc:
-        log.warning("analyst.parse_failed", error=str(exc))
-        analysis = {
-            "insights": [f"Query returned {len(rows)} rows."],
-            "key_metrics": {k: str(v.get("total", "")) for k, v in basic_stats.items()},
-            "anomalies": [],
-            "summary_sentence": f"Found {len(rows)} records matching your query.",
-        }
+        log.warning("analyst.parse_failed_using_dynamic_fallback", error=str(exc))
+        analysis = _generate_rule_based_fallback_insights(rows, columns, basic_stats, question)
 
-    log.info("analyst.complete", insight_count=len(analysis.get("insights", [])))
+    # Post-process to guarantee bolding on all numbers/dates and strip any double quotes
+    import re
+    cleaned_insights = []
+    for ins in analysis.get("insights", []):
+        s = str(ins)
+        
+        def bold_unbolded_metrics(text: str) -> str:
+            parts = re.split(r'(\*\*.*?\*\*)', text)
+            for i in range(len(parts)):
+                if not parts[i].startswith('**'):
+                    # Bold dates: e.g., 2025-11 or 2025-01-01
+                    parts[i] = re.sub(r'\b(\d{4}-\d{2}(?:-\d{2})?)\b', r'**\1**', parts[i])
+                    # Bold currencies and units: e.g., ₹23.81 Cr, 17.99 L, 30.2%, 197.36
+                    parts[i] = re.sub(r'\b(₹?\d+(?:\.\d+)?(?:\s*(?:Cr|L|K|%))?)\b', r'**\1**', parts[i])
+            return "".join(parts)
+            
+        s = bold_unbolded_metrics(s)
+        s = s.replace('"', '').replace('****', '**')
+        cleaned_insights.append(s)
+
+    log.info("analyst.complete", insight_count=len(cleaned_insights))
     return {
         **state,
-        "insights": analysis.get("insights", []),
+        "insights": cleaned_insights,
         "key_metrics": analysis.get("key_metrics", {}),
         "anomalies": analysis.get("anomalies", []),
     }

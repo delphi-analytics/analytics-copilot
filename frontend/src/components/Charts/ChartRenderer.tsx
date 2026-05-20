@@ -28,6 +28,18 @@ function fmtINR(val: unknown): string {
   return `${sign}₹${abs.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
 }
 
+/** Format a count or quantity (K/L/Cr) without any currency symbol */
+function fmtCount(val: unknown): string {
+  const n = typeof val === 'number' ? val : parseFloat(String(val))
+  if (isNaN(n)) return String(val ?? '')
+  const abs = Math.abs(n)
+  const sign = n < 0 ? '-' : ''
+  if (abs >= 1_00_00_000) return `${sign}${(abs / 1_00_00_000).toFixed(1)}Cr`
+  if (abs >= 1_00_000)    return `${sign}${(abs / 1_00_000).toFixed(1)}L`
+  if (abs >= 1_000)       return `${sign}${(abs / 1_000).toFixed(1)}K`
+  return `${sign}${abs.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
+}
+
 /** Detect if a column/series name looks like money */
 const isMoney = (name: string) => {
   const n = (name || '').toLowerCase()
@@ -54,43 +66,47 @@ function seriesLooksLikeMoney(series: unknown[]): boolean {
 function patchConfig(cfg: Record<string, unknown>): Record<string, unknown> {
   const out = structuredClone(cfg) as Record<string, unknown>
   const seriesArr = Array.isArray(out.series) ? (out.series as Record<string, unknown>[]) : []
-  const moneyChart = seriesLooksLikeMoney(seriesArr)
 
-  // ── Y-axis: show ₹ on all tick labels ─────────────────────────────────────
-  if (out.yAxis && moneyChart) {
-    const yAxis = (Array.isArray(out.yAxis) ? out.yAxis : [out.yAxis]) as Record<string, unknown>[]
-    out.yAxis = yAxis.map(ax => ({
-      ...ax,
-      axisLabel: {
-        ...(typeof ax.axisLabel === 'object' && ax.axisLabel ? ax.axisLabel : {}),
-        formatter: (val: number) => fmtINR(val),
-      },
-    }))
+  // ── Y-axis: format each Y-axis based on whether its bound series are currency ──
+  if (out.yAxis) {
+    const yAxisArr = (Array.isArray(out.yAxis) ? out.yAxis : [out.yAxis]) as Record<string, unknown>[]
+    out.yAxis = yAxisArr.map((ax, idx) => {
+      const boundSeries = seriesArr.filter(s => (s.yAxisIndex ?? 0) === idx)
+      const isMoneyAxis = boundSeries.some(s => isMoney(String(s.name || '')))
+      const formatterFn = isMoneyAxis ? fmtINR : fmtCount
+      return {
+        ...ax,
+        axisLabel: {
+          ...(typeof ax.axisLabel === 'object' && ax.axisLabel ? ax.axisLabel : {}),
+          formatter: (val: number) => formatterFn(val),
+        },
+      }
+    })
     // Unwrap single-element array back to object if original was object
     if (!Array.isArray(cfg.yAxis)) out.yAxis = (out.yAxis as unknown[])[0]
   }
 
-  // ── Series: add data labels directly on bars/lines/pie slices ─────────────
+  // ── Series: add data labels formatted dynamically based on series type ────
   out.series = seriesArr.map(s => {
     const type = String(s.type || '')
-    const seriesMoney = moneyChart || isMoney(String(s.name || ''))
+    const seriesMoney = isMoney(String(s.name || ''))
+    const formatterFn = seriesMoney ? fmtINR : fmtCount
 
-    if ((type === 'bar' || type === 'line') && seriesMoney) {
+    if (type === 'bar' || type === 'line') {
       return {
         ...s,
         label: {
           show: true,
-          position: type === 'bar' ? 'top' : 'top',
+          position: 'top',
           fontSize: 10,
           color: '#475569',
-          formatter: (params: { value: unknown }) => fmtINR(params.value),
+          formatter: (params: { value: unknown }) => formatterFn(params.value),
           ...(typeof s.label === 'object' && s.label ? s.label : {}),
-          // Always override formatter for money
         },
       }
     }
 
-    if (type === 'pie' && seriesMoney) {
+    if (type === 'pie') {
       return {
         ...s,
         label: {
@@ -98,16 +114,15 @@ function patchConfig(cfg: Record<string, unknown>): Record<string, unknown> {
           show: true,
           fontSize: 11,
           formatter: (params: { name: string; value: unknown; percent: number }) =>
-            `{name|${params.name}}\n{val|${fmtINR(params.value)}}`,
+            `{name|${params.name}}\n{val|${formatterFn(params.value)}}`,
           rich: {
             name: { fontSize: 11, color: '#334155', lineHeight: 18 },
             val:  { fontSize: 12, color: '#1e40af', fontWeight: 'bold', lineHeight: 18 },
           },
         },
-        // Pie tooltip
         tooltip: {
           formatter: (params: { name: string; value: unknown; percent: number }) =>
-            `${params.name}<br/><b>${fmtINR(params.value)}</b> (${params.percent?.toFixed(1)}%)`,
+            `${params.name}<br/><b>${formatterFn(params.value)}</b> (${params.percent?.toFixed(1)}%)`,
         },
       }
     }
@@ -115,8 +130,8 @@ function patchConfig(cfg: Record<string, unknown>): Record<string, unknown> {
     return s
   })
 
-  // ── Tooltip: show ₹ on axis-trigger tooltips (bar/line) ───────────────────
-  if (moneyChart && !['pie'].includes(String(seriesArr[0]?.type || ''))) {
+  // ── Tooltip: format series values axis-by-axis based on whether they look like money ──
+  if (!['pie'].includes(String(seriesArr[0]?.type || ''))) {
     out.tooltip = {
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
@@ -129,7 +144,8 @@ function patchConfig(cfg: Record<string, unknown>): Record<string, unknown> {
           const marker = String(p.marker || '')
           const name   = String(p.seriesName || p.name || '')
           const val    = p.value
-          const fmt    = moneyChart ? fmtINR(val) : String(val)
+          const seriesMoney = isMoney(name)
+          const fmt    = seriesMoney ? fmtINR(val) : fmtCount(val)
           return `${marker} ${name}: <b>${fmt}</b>`
         })
         return `<div style="font-size:12px">${title ? `<b>${title}</b><br/>` : ''}${rows.join('<br/>')}</div>`

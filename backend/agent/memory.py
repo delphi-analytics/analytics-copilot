@@ -18,7 +18,7 @@ class VectorMemory:
             return
         if not self.client:
             try:
-                self.client = QdrantClient(url=settings.qdrant_url)
+                self.client = QdrantClient(url=settings.qdrant_url, timeout=5)
                 self.embedding_model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
                 
                 # Check if collection exists
@@ -33,8 +33,11 @@ class VectorMemory:
                     )
                 log.info("qdrant.connected", url=settings.qdrant_url)
             except Exception as e:
-                log.error("qdrant.connection_failed", error=str(e))
-                self.enabled = False
+                # Do NOT permanently disable — reset client so next call retries.
+                # This handles cold-boot race conditions where Qdrant starts after the server.
+                log.warning("qdrant.connection_failed_will_retry", error=str(e))
+                self.client = None
+                self.embedding_model = None
 
     def embed_text(self, text: str) -> list[float]:
         if not self.embedding_model:
@@ -75,15 +78,38 @@ class VectorMemory:
 
         try:
             vector = self.embed_text(question)
-            results = self.client.search(
+            results = self.client.query_points(
                 collection_name=self.collection_name,
-                query_vector=vector,
+                query=vector,
                 limit=limit,
                 score_threshold=0.85
             )
-            return [res.payload for res in results]
+            return [res.payload for res in results.points]
         except Exception as e:
             log.error("qdrant.search_failed", error=str(e))
             return []
+
+    def search_semantic_cache(self, question: str, threshold: float = 0.92) -> dict | None:
+        if not self.client and self.enabled:
+            self.connect()
+        if not self.enabled:
+            return None
+
+        try:
+            vector = self.embed_text(question)
+            results = self.client.query_points(
+                collection_name=self.collection_name,
+                query=vector,
+                limit=1,
+                score_threshold=threshold
+            )
+            if results.points:
+                point = results.points[0]
+                log.info("qdrant.semantic_cache_hit", score=point.score, question=question, matched=point.payload.get("question"))
+                return point.payload
+            return None
+        except Exception as e:
+            log.error("qdrant.semantic_cache_failed", error=str(e))
+            return None
 
 vector_memory = VectorMemory()

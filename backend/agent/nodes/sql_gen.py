@@ -1,8 +1,10 @@
 """
 Node 3: SQL Generation & Validation
-Generates SQL from the question + schema context.
-Uses smart model (Groq 70B / Claude) for accuracy.
-Validates syntax before passing to execution.
+Generates ClickHouse SQL from the question + database schema context.
+Uses the smart model (Groq 70B / Gemini fallback) for accuracy.
+
+Role boundary: ONLY generates and validates SQL.
+Does NOT execute queries. Does NOT generate insights or charts.
 """
 from __future__ import annotations
 import json
@@ -19,9 +21,8 @@ log = structlog.get_logger(__name__)
 
 
 def _clean_sql(sql: str) -> str:
-    """
-    Strip trailing JSON artifacts that Groq sometimes appends to the SQL string.
-    """
+    """Strip trailing JSON artifacts that models sometimes append after the SQL."""
+    # Remove trailing quote + JSON keys (Groq sometimes leaks these)
     for pattern in [
         r'(SELECT[\s\S]+?LIMIT\s+\d+)\s*"[\s\S]*$',
         r'(SELECT[\s\S]+?)\s*",\s*"(?:explanation|columns|is_aggregated)',
@@ -34,32 +35,63 @@ def _clean_sql(sql: str) -> str:
 
 
 def _parse_sql_from_llm(content: str) -> tuple[str, dict]:
-    """
-    Robust parser for LLM SQL responses.
-    """
+    """Robust parser for LLM SQL responses — handles JSON, markdown fences, and raw SQL."""
     raw = content.strip()
     result: dict = {"explanation": "", "columns_returned": []}
 
-    # 1. Try to parse as JSON first
-    try:
-        json_str = raw
-        if "```" in raw:
-            match = re.search(r'```(?:json)?\s*(\{[\s\S]+?\})\s*```', raw)
-            if match: json_str = match.group(1)
-        
-        parsed = json.loads(json_str)
+    def _extract_json_object(text: str) -> dict | None:
+        """Find and parse the outermost JSON object in text."""
+        # Find the first '{' and last '}' — handles nested braces in SQL strings
+        start = text.find('{')
+        if start == -1:
+            return None
+        # Walk forward counting braces to find the matching '}'
+        depth = 0
+        in_string = False
+        escape_next = False
+        for i, ch in enumerate(text[start:], start):
+            if escape_next:
+                escape_next = False
+                continue
+            if ch == '\\' and in_string:
+                escape_next = True
+                continue
+            if ch == '"' and not escape_next:
+                in_string = not in_string
+            if not in_string:
+                if ch == '{':
+                    depth += 1
+                elif ch == '}':
+                    depth -= 1
+                    if depth == 0:
+                        try:
+                            return json.loads(text[start:i+1])
+                        except Exception:
+                            return None
+        return None
+
+    # 1. Try JSON parse — strip markdown fences first
+    search_text = raw
+    if "```" in raw:
+        # Remove fences to get the inner content
+        inner = re.sub(r'```(?:json)?', '', raw).replace('```', '').strip()
+        search_text = inner
+
+    parsed = _extract_json_object(search_text)
+    if parsed and isinstance(parsed, dict):
         sql = parsed.get("sql", "").strip()
+        # Unescape JSON-escaped newlines
+        sql = sql.replace("\\n", "\n").replace('\\"', '"')
         result["explanation"] = parsed.get("explanation", "")
         result["columns_returned"] = parsed.get("columns_returned", [])
-        if sql: return _clean_sql(sql), result
-    except:
-        pass
+        if sql:
+            return _clean_sql(sql), result
 
-    # 2. Fallback: Search & Rescue for SELECT
+    # 2. Fallback: find raw SELECT…LIMIT block
     sql_match = re.search(r'(SELECT[\s\S]+?(?:LIMIT\s+\d+|;|$))', raw, re.IGNORECASE)
     if sql_match:
         sql = _clean_sql(sql_match.group(1))
-        if len(sql) > 10:
+        if len(sql) > 15:
             return sql, result
 
     return "", result
@@ -157,14 +189,19 @@ def _is_safe_sql(sql: str) -> tuple[bool, str]:
 
 
 async def generate_sql(state: AnalyticsState) -> AnalyticsState:
+    # Skip if SQL already provided by semantic cache
+    if state.get("sql_query"):
+        return state
+
     intent = state.get("intent", {})
     schema_context = state.get("schema_context", {})
-    question = intent.get("rephrased_question", state["user_question"])
+    question = intent.get("rephrased_question") or state.get("user_question", "")
 
     tables = schema_context.get("relevant_tables", [])
     datasource_id = state.get("datasource_id", "")
     is_clickhouse = datasource_id == "limese"
 
+    # Load DB intelligence context (cached on disk — instant load)
     db_intelligence_context = ""
     if is_clickhouse:
         try:
@@ -175,51 +212,128 @@ async def generate_sql(state: AnalyticsState) -> AnalyticsState:
         except Exception as exc:
             log.warning("sql_gen.db_intelligence_failed", error=str(exc))
 
-    schema_section = db_intelligence_context if db_intelligence_context else "Use the provided schema."
-    
+    schema_section = db_intelligence_context if db_intelligence_context else (
+        "Tables: " + ", ".join(t.get("name", "") for t in tables)
+    )
+
+    q_lower = question.lower()
+    has_units_keyword = any(w in q_lower for w in ["unit", "qty", "quantity", "volume", "order", "count"])
+    has_revenue_keyword = any(w in q_lower for w in ["sales", "revenue", "subtotal", "price", "spend", "value", "amount", "earning", "profit"])
+
+    # Fetch past successful queries from Qdrant for few-shot examples
     similar_queries = vector_memory.search_similar_queries(question, limit=2)
     examples_str = ""
     if similar_queries:
-        examples_str = "\nPAST EXAMPLES:\n" + "\n".join([f"Q: {q['question']}\nSQL: {q['sql']}" for q in similar_queries])
-        examples_str += "\n\nWARNING: Past examples are for reference only. If the user asks for a DIFFERENT metric or calculation (e.g., 'average' instead of 'total', or 'growth' instead of 'trend'), DO NOT blindly copy the past example. You MUST adjust the SQL functions (e.g. use AVG instead of SUM, or compute differences) to answer the specific user question."
+        filtered_examples = []
+        for q in similar_queries:
+            ex_sql = q.get("sql", "").lower()
+            ex_selects_units = "quantity_ordered" in ex_sql or "units" in ex_sql
+            ex_selects_revenue = "row_subtotal" in ex_sql or "revenue" in ex_sql
+            
+            # If the user question does NOT ask for units, filter out any example SQL that selects units!
+            if not has_units_keyword and ex_selects_units:
+                continue
+            # If the user question does NOT ask for revenue, filter out any example SQL that selects revenue!
+            if not has_revenue_keyword and ex_selects_revenue:
+                continue
+            filtered_examples.append(q)
+            
+        if filtered_examples:
+            examples_str = "\nPAST VERIFIED EXAMPLES (adapt, do not blindly copy):\n"
+            for q in filtered_examples:
+                if q.get("sql") and q.get("question"):
+                    examples_str += f"Q: {q['question']}\nSQL: {q['sql']}\n\n"
 
-    heatmap_example = """
-EXAMPLE (Heatmap of Platform vs Month):
-Question: "Revenue by platform and month for 2025"
-SQL: SELECT sales_platform, formatDateTime(date_created, '%Y-%m') AS month, sum(row_subtotal) AS revenue
-     FROM combined_sales_final
-     WHERE final_status NOT IN ('cancelled','returned') AND date_created >= '2025-01-01'
-     GROUP BY sales_platform, month
-     ORDER BY month ASC, revenue DESC
-     LIMIT 500
+    clickhouse_rules = """
+CLICKHOUSE-SPECIFIC RULES (violations cause runtime errors):
+1. Table aliases MUST be declared: write "FROM combined_sales_final csf" not just "FROM combined_sales_final".
+   Then reference columns as csf.date_created, csf.row_subtotal, etc.
+2. Window functions: use lagInFrame() / leadInFrame() — NOT lag() / lead().
+3. Date filtering: date_created >= '2025-01-01' (string comparison works; toYear() with timezone fails).
+4. Date grouping: formatDateTime(date_created, '%Y-%m') AS month.
+5. Always filter: WHERE final_status NOT IN ('cancelled','Cancelled','CANCELLED','returned','Returned').
+6. Revenue column: row_subtotal (NOT order_price).
+7. Units column: quantity_ordered (NOT shipped_qty — always 0).
+8. JOIN pattern: combined_sales_final csf LEFT JOIN product_master pm ON csf.internal_sku = pm.internal_sku.
+9. Category filter: pm.category_l1 IN ('Skincare', 'Makeup', 'Haircare').
+10. Always end with LIMIT (max 10000 for detail queries, 50-500 for aggregations).
+11. STRICT DATE PERIOD FILTERING: If the user asks for a specific year (e.g. "in 2025"), you MUST include both start and end filters for that exact year, e.g. date_created >= '2025-01-01' AND date_created <= '2025-12-31'. Never let the dates spill into other years.
+12. SINGLE-MONTH TREND QUERY PATTERN: If the user asks specifically for the "trend" of a single month (e.g., "sales trend for January 2025" or "trend in Jan"), you MUST group the sales by day (e.g., `formatDateTime(csf.date_created, '%Y-%m-%d') AS date`) so that multiple rows are returned to plot a daily trend line chart. Do NOT group by month or sum into a single row when a trend is explicitly requested.
+13. ClickHouse Aggregate & GROUP BY Safety: In ClickHouse, every column in the SELECT list that is not a metric/measure MUST be in the GROUP BY clause, and all metric/measure columns (like `row_subtotal` or `quantity_ordered`) MUST be wrapped in aggregate functions (like `SUM(csf.row_subtotal)` or `SUM(csf.quantity_ordered)`). Never select raw `row_subtotal` without an aggregate function if GROUP BY is present.
 
-EXAMPLE (Month-over-month growth / Window Functions):
-Question: "Monthly sales growth trend"
-SQL: SELECT month, revenue, revenue - lagInFrame(revenue) OVER (ORDER BY month) AS revenue_growth
-     FROM (
-         SELECT formatDateTime(date_created, '%Y-%m') AS month, sum(row_subtotal) AS revenue
-         FROM combined_sales_final
-         WHERE final_status NOT IN ('cancelled','returned')
-         GROUP BY month
-     )
-     ORDER BY month ASC
-     LIMIT 500
 
-EXAMPLE (Current low stock levels / inventory):
-Question: "Which products are low on inventory right now?"
-SQL: SELECT pm.item_name, iso.inventory AS current_stock
-     FROM inventory_sales_overview_new iso
-     LEFT JOIN product_master pm ON iso.sku = pm.internal_sku
-     WHERE iso.date = (SELECT max(date) FROM inventory_sales_overview_new WHERE inventory > 0)
-       AND iso.inventory < 100 AND iso.inventory > 0
-     ORDER BY current_stock ASC
-     LIMIT 100
+
+CRITICAL COLUMN SELECTION RULES:
+- ONLY select metric columns that are EXPLICITLY requested in the user's question.
+- If the user asks for "sales", "revenue", "sales trend", or "performance", select ONLY the revenue column (`row_subtotal`). Do NOT select `quantity_ordered` (units) or other metrics unless specifically requested (e.g. if the user says "revenue and units" or "sales and volume").
+- If the user asks for "units", "orders", "volume", or "quantity", select ONLY the quantity column (`quantity_ordered`). Do NOT select `row_subtotal` (revenue) unless specifically requested.
+- Keeping the query focused prevents visual noise and keeps the dashboard extremely clean.
 """ if is_clickhouse else ""
 
     # ─── RAG: Add business context for better SQL generation ─────────────────────
     rag_context = build_rag_prompt(question)
 
-    prompt = f"""You are a ClickHouse SQL expert with READ-ONLY database access.
+    extra_warning = ""
+    if has_revenue_keyword and not has_units_keyword:
+        extra_warning = "\n⚠️ COLUMN SELECTION WARNING: The user is asking ONLY for revenue/sales. You MUST NOT select 'quantity_ordered' (units) or alias anything as 'units'. Select ONLY the revenue metric column (row_subtotal AS revenue). Do not use the units column at all in this query.\n"
+    elif has_units_keyword and not has_revenue_keyword:
+        extra_warning = "\n⚠️ COLUMN SELECTION WARNING: The user is asking ONLY for units/quantity/orders. You MUST NOT select 'row_subtotal' (revenue) or alias anything as 'revenue'. Select ONLY the units metric column (quantity_ordered AS units).\n"
+
+    # Dynamic date range parser (Month, Year, Multiple Years)
+    years = [int(y) for y in re.findall(r'\b(20[12]\d)\b', question)]
+    
+    month_names = {
+        'january': 1, 'february': 2, 'march': 3, 'april': 4, 'may': 5, 'june': 6,
+        'july': 7, 'august': 8, 'september': 9, 'october': 10, 'november': 11, 'december': 12,
+        'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'jun': 6, 'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12
+    }
+    
+    days_in_month = {1: 31, 2: 28, 3: 31, 4: 30, 5: 31, 6: 30, 7: 31, 8: 31, 9: 30, 10: 31, 11: 30, 12: 31}
+    
+    q_lower = question.lower()
+    found_months = []
+    for name, num in month_names.items():
+        if re.search(r'\b' + name + r'\b', q_lower):
+            found_months.append((name, num))
+            
+    # Check for digit months like MM-YYYY or YYYY-MM
+    digit_month_match = re.search(r'\b(0[1-9]|1[0-2])[-/](20[12]\d)\b', question)
+    if not digit_month_match:
+        digit_month_match = re.search(r'\b(20[12]\d)[-/](0[1-9]|1[0-2])\b', question)
+        
+    if digit_month_match:
+        if len(digit_month_match.group(1)) == 2:
+            m_num = int(digit_month_match.group(1))
+            yr = int(digit_month_match.group(2))
+        else:
+            yr = int(digit_month_match.group(1))
+            m_num = int(digit_month_match.group(2))
+        
+        is_leap = (yr % 4 == 0 and (yr % 100 != 0 or yr % 400 == 0))
+        last_day = 29 if (m_num == 2 and is_leap) else days_in_month[m_num]
+        start_dt = f"{yr}-{m_num:02d}-01"
+        end_dt = f"{yr}-{m_num:02d}-{last_day:02d}"
+        extra_warning += f"\n⚠️ STRICT DATE FILTERING WARNING: The user asked specifically for month {m_num:02d}-{yr}. You MUST restrict the ClickHouse date range strictly to this month: `date_created >= '{start_dt}' AND date_created <= '{end_dt}'`. Do NOT select any data from other months.\n"
+        
+    elif found_months and years:
+        m_name, m_num = found_months[0]
+        yr = years[0]
+        is_leap = (yr % 4 == 0 and (yr % 100 != 0 or yr % 400 == 0))
+        last_day = 29 if (m_num == 2 and is_leap) else days_in_month[m_num]
+        start_dt = f"{yr}-{m_num:02d}-01"
+        end_dt = f"{yr}-{m_num:02d}-{last_day:02d}"
+        extra_warning += f"\n⚠️ STRICT DATE FILTERING WARNING: The user asked specifically for {m_name.capitalize()} {yr}. You MUST restrict the ClickHouse date range strictly to this month: `date_created >= '{start_dt}' AND date_created <= '{end_dt}'`. Do NOT select any data from other months.\n"
+        
+    elif len(years) >= 2:
+        start_yr = min(years)
+        end_yr = max(years)
+        extra_warning += f"\n⚠️ STRICT DATE FILTERING WARNING: The user asked for multiple years from {start_yr} to {end_yr}. You MUST restrict the ClickHouse date range strictly to this range: `date_created >= '{start_yr}-01-01' AND date_created <= '{end_yr}-12-31'`. Do NOT select any data from other years.\n"
+        
+    elif len(years) == 1:
+        yr = years[0]
+        extra_warning += f"\n⚠️ STRICT DATE FILTERING WARNING: The user asked specifically for the year {yr}. You MUST restrict the ClickHouse date range strictly to this year: `date_created >= '{yr}-01-01' AND date_created <= '{yr}-12-31'`. Do NOT select any data from other years.\n"
+
+    prompt = f"""You are a {"ClickHouse" if is_clickhouse else "SQL"} expert with READ-ONLY database access generating a query for an analytics question.
 
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                       READ-ONLY ACCESS - CRITICAL RULE                         ║
@@ -244,55 +358,46 @@ SQL: SELECT pm.item_name, iso.inventory AS current_stock
 {rag_context}
 
 {schema_section}
-{heatmap_example}
+{clickhouse_rules}
 {examples_str}
-
-CRITICAL WINDOW FUNCTION RULES:
-1. ClickHouse does NOT support standard lag() or lead() window functions. It throws "Unknown aggregate function lag".
-2. You MUST use lagInFrame() instead of lag() and leadInFrame() instead of lead() when writing window queries.
-   Example: lagInFrame(revenue) OVER (ORDER BY month)
-
-CRITICAL QUERY RULES FOR QUALITATIVE QUESTIONS:
-1. If the user asks for "reasons", "causes", "factors", or "drivers" of a sales decline, growth, or trend:
-   - DO NOT just write a query that pulls a simple overall monthly trend over time.
-   - Instead, write a query that breaks down the sales/revenue by key categorical dimensions (e.g., sales_platform, brand, or product category_l1 from product_master) over the relevant time period.
-   - For example, query the sales breakdown by platform and brand, or platform and month, to enable the downstream analyst to see exactly which platforms, brands, or categories are driving the drop or change.
+{extra_warning}
 
 User question: "{question}"
 
-Return ONLY this JSON:
+Generate a complete, correct SQL query. Return ONLY this JSON (no other text):
 {{
-  "sql": "<complete SQL query>",
-  "explanation": "<one sentence what it does>",
-  "columns_returned": ["col1", "col2"],
-  "is_aggregated": true
+  "sql": "<complete SQL query with all clauses: SELECT, FROM with aliases, JOIN, WHERE, GROUP BY, ORDER BY, LIMIT>",
+  "explanation": "<one sentence describing what this query returns>",
+  "columns_returned": ["col1", "col2", "col3"]
 }}"""
 
-    from backend.config import settings as _s
     try:
         resp = await call_llm(
             messages=[{"role": "user", "content": prompt}],
-            model=_s.llm_smart_model,
             task="sql",
-            max_tokens=800,
+            max_tokens=900,
             temperature=0.1,
         )
-    except Exception as exc:
-        return {**state, "error": f"AI model failed: {str(exc)[:100]}", "sql_query": ""}
+    except RuntimeError as exc:
+        # task="sql" raises on total failure — propagate as agent error
+        return {**state, "error": f"SQL generation failed — all AI models unavailable: {str(exc)[:150]}", "sql_query": ""}
 
-    sql, result = _parse_sql_from_llm(resp.content)
+    sql, meta = _parse_sql_from_llm(resp.content)
     is_safe, reason = _is_safe_sql(sql)
-    
-    if not is_safe:
-        return {**state, "error": f"Invalid SQL: {reason}", "sql_query": ""}
 
+    if not is_safe:
+        log.warning("sql_gen.unsafe_or_invalid", reason=reason, raw=resp.content[:200])
+        return {**state, "error": f"Generated SQL is invalid: {reason}", "sql_query": ""}
+
+    # Ensure LIMIT is present (guard against LLM skipping it)
     if "LIMIT" not in sql.upper():
         sql = sql.rstrip(";") + f" LIMIT {settings.max_rows_returned}"
 
+    log.info("sql_gen.complete", sql_length=len(sql), explanation=meta.get("explanation", "")[:80])
     return {
         **state,
         "sql_query": sql,
         "sql_validated": True,
-        "sql_explanation": result.get("explanation", ""),
+        "sql_explanation": meta.get("explanation", ""),
         "model_used": resp.model,
     }

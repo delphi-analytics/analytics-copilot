@@ -78,21 +78,32 @@ class LLMCache:
             return entry.result
 
     async def get_async(self, question: str, datasource_id: str, metadata_hash: str = "") -> dict | None:
-        """Async version of get that checks Redis first, then memory."""
+        """Async version of get that checks Redis first, then memory.
+        Returns None (cache miss) for entries with 0 rows — forces a fresh agent run.
+        """
         key = self._make_key(question, datasource_id, metadata_hash)
-        
+
         # 1. Try Redis
         if self.use_redis:
             val = await redis_cache.get(f"llm_cache:{key}")
             if val:
-                self._hits += 1
-                log.info("llm_cache.hit.redis", question=question[:60])
-                return val
+                # Reject stale empty results
+                if val.get("row_count", 0) == 0:
+                    log.info("llm_cache.miss.empty_result", question=question[:60])
+                    await redis_cache.delete(f"llm_cache:{key}")
+                else:
+                    self._hits += 1
+                    log.info("llm_cache.hit.redis", question=question[:60])
+                    return val
             else:
                 log.info("llm_cache.miss.redis", question=question[:60], key=key)
-        
+
         # 2. Fallback to memory
-        return self.get(question, datasource_id, metadata_hash)
+        result = self.get(question, datasource_id, metadata_hash)
+        if result is not None and result.get("row_count", 0) == 0:
+            log.info("llm_cache.miss.empty_memory", question=question[:60])
+            return None
+        return result
 
     def set(self, question: str, datasource_id: str, result: dict, metadata_hash: str = "") -> None:
         key = self._make_key(question, datasource_id, metadata_hash)

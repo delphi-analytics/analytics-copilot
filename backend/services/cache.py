@@ -38,4 +38,12 @@ class RedisCache:
         except Exception as e:
             log.warning("redis.set_failed", key=key, error=str(e))
 
+    async def delete(self, key: str) -> None:
+        if not self.redis:
+            await self.connect()
+        try:
+            await self.redis.delete(key)
+        except Exception as e:
+            log.warning("redis.delete_failed", key=key, error=str(e))
+
 redis_cache = RedisCache()

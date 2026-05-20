@@ -23,7 +23,7 @@ CHART_TYPE_MAP = {
 }
 
 
-def _pivot_and_build_multi_series(columns: list, rows: list, title: str, chart_type: str = "bar") -> dict:
+def _pivot_and_build_multi_series(columns: list, rows: list, title: str, chart_type: str = "bar", question: str = "") -> dict:
     """
     Pivot multi-dimensional query results into a multi-series ECharts option.
     Handles:
@@ -64,6 +64,36 @@ def _pivot_and_build_multi_series(columns: list, rows: list, title: str, chart_t
     # --- CASE 1: Multiple numeric columns ---
     if len(str_cols) == 1 and len(num_cols) >= 1:
         x_col = str_cols[0]
+
+        # ── Smart column filtering: drop metrics the user did NOT ask for ──
+        # If the user only asked for revenue/sales → drop units columns
+        # If the user only asked for units/orders  → drop revenue columns
+        q_lower = question.lower()
+        REVENUE_WORDS = {"revenue", "sales", "earning", "income", "amount", "price", "spend", "value", "subtotal", "profit"}
+        UNIT_WORDS    = {"unit", "qty", "quantity", "volume", "order", "count", "sold"}
+        asked_revenue = any(w in q_lower for w in REVENUE_WORDS)
+        asked_units   = any(w in q_lower for w in UNIT_WORDS)
+
+        # "trend" / "performance" / "monthly sales" implicitly asks for revenue only
+        if ("trend" in q_lower or "performance" in q_lower) and not asked_units:
+            asked_revenue = True
+
+        if len(num_cols) > 1 and (asked_revenue or asked_units) and not (asked_revenue and asked_units):
+            # Keep only columns that match what was asked
+            def _is_revenue_col(c):
+                return any(w in c.lower() for w in ["revenue", "sales", "subtotal", "income", "amount", "price", "value"])
+            def _is_unit_col(c):
+                return any(w in c.lower() for w in ["unit", "qty", "quantity", "order", "count", "sold", "volume"])
+
+            if asked_revenue and not asked_units:
+                # Keep only revenue columns (first if none match)
+                filtered = [c for c in num_cols if _is_revenue_col(c)]
+                num_cols = filtered if filtered else [num_cols[0]]
+            elif asked_units and not asked_revenue:
+                # Keep only unit columns (first if none match)
+                filtered = [c for c in num_cols if _is_unit_col(c)]
+                num_cols = filtered if filtered else [num_cols[0]]
+
         x_data = []
         seen_x = set()
         for r in rows:
@@ -95,6 +125,16 @@ def _pivot_and_build_multi_series(columns: list, rows: list, title: str, chart_t
                 "areaStyle": {"opacity": 0.05} if chart_type == "line" else None
             })
 
+        # Currency formatter if any series is monetary
+        is_currency = any(
+            any(kw in s["name"].lower() for kw in ["revenue", "sales", "price", "amount", "subtotal", "income", "value"])
+            for s in series_list
+        )
+        y_axes = {
+            "type": "value",
+            "axisLabel": {"formatter": "₹{value}" if is_currency else "{value}"}
+        }
+
         return {
             "title": {"text": title, "left": "center"},
             "color": COLORS,
@@ -111,7 +151,7 @@ def _pivot_and_build_multi_series(columns: list, rows: list, title: str, chart_t
                     "ellipsis": "..."
                 }
             },
-            "yAxis": {"type": "value"},
+            "yAxis": y_axes,
             "series": series_list,
             "grid": {"left": "12%", "right": "5%", "bottom": "25%" if len(x_data) > 6 else "15%", "top": "18%"},
         }
@@ -232,12 +272,12 @@ def _pivot_and_build_multi_series(columns: list, rows: list, title: str, chart_t
     }
 
 
-def _build_bar_chart(columns: list, rows: list, title: str) -> dict:
-    return _pivot_and_build_multi_series(columns, rows, title, "bar")
+def _build_bar_chart(columns: list, rows: list, title: str, question: str = "") -> dict:
+    return _pivot_and_build_multi_series(columns, rows, title, "bar", question)
 
 
-def _build_line_chart(columns: list, rows: list, title: str) -> dict:
-    return _pivot_and_build_multi_series(columns, rows, title, "line")
+def _build_line_chart(columns: list, rows: list, title: str, question: str = "") -> dict:
+    return _pivot_and_build_multi_series(columns, rows, title, "line", question)
 
 
 def _build_pie_chart(columns: list, rows: list, title: str) -> dict:
@@ -454,6 +494,19 @@ async def generate_viz_config(state: AnalyticsState) -> AnalyticsState:
         log.info("viz.suppressed_for_qualitative_query", question=question)
         return {**state, "viz_config": None, "viz_type": None}
 
+    # Suppress charts for single month queries (if exactly 1 month is asked, return only text/insights)
+    import re
+    month_names = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december",
+                   "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+    q_lower = question.lower()
+    has_month_word = any(re.search(r'\b' + m + r'\b', q_lower) for m in month_names)
+    has_digit_month = re.search(r'\b(0[1-9]|1[0-2])[-/](20[12]\d)\b', q_lower) or re.search(r'\b(20[12]\d)[-/](0[1-9]|1[0-2])\b', q_lower)
+    
+    is_trend_query = any(w in q_lower for w in ["trend", "daily", "weekly", "chart", "graph", "plot", "map", "viz", "visualization"])
+    if (has_month_word or has_digit_month) and len(rows) == 1 and not is_trend_query:
+        log.info("viz.suppressed_for_single_month", question=question)
+        return {**state, "viz_config": None, "viz_type": None}
+
     # Step 1: Determine chart type
     chart_hint = intent.get("chart_type_hint")
     viz_type = chart_hint or _auto_select_chart_type(columns, rows, intent, question)
@@ -461,10 +514,13 @@ async def generate_viz_config(state: AnalyticsState) -> AnalyticsState:
     # Step 2: Generate title
     title = _generate_title(question, viz_type)
 
-    # Step 3: Build ECharts config
+    # Step 3: Build ECharts config (pass question so builder can filter unused metrics)
     builder = CHART_BUILDERS.get(viz_type, _build_table_config)
     try:
-        viz_config = builder(columns, rows, title)
+        if viz_type in ("bar", "line", "area"):
+            viz_config = builder(columns, rows, title, question)
+        else:
+            viz_config = builder(columns, rows, title)
     except Exception as exc:
         log.warning("viz.build_failed", chart_type=viz_type, error=str(exc))
         viz_config = _build_table_config(columns, rows, title)

@@ -2,6 +2,9 @@
 Node 1: Intent Understanding
 Classifies what the user wants: chart, query, follow-up, comparison, trend, etc.
 Fast model — runs in <500ms.
+
+Role boundary: ONLY classifies intent and rephrases the question clearly.
+Does NOT generate SQL. Does NOT access the database.
 """
 from __future__ import annotations
 import json
@@ -11,6 +14,15 @@ from backend.agent.llm import call_llm
 from backend.agent.pre_filter import pre_classify
 
 log = structlog.get_logger(__name__)
+
+
+def _get_last_assistant_context(history: list[dict]) -> str:
+    """Extract last assistant message content to provide context for follow-ups."""
+    for msg in reversed(history):
+        if msg.get("role") == "assistant":
+            content = msg.get("content", "")
+            return content[:300] if content else ""
+    return ""
 
 
 async def understand_intent(state: AnalyticsState) -> AnalyticsState:
@@ -35,9 +47,11 @@ async def understand_intent(state: AnalyticsState) -> AnalyticsState:
     # ─── STEP 2: LLM-based intent classification for ambiguous queries ────────
     history = state.get("conversation_history", [])[-4:]  # last 2 turns for context
 
-    history_text = "\n".join(f"{m['role']}: {m['content'][:200]}" for m in history) if history else "None"
+    history_text = "\n".join(
+        f"{m['role'].upper()}: {m['content'][:250]}" for m in history
+    ) if history else "None"
 
-    prompt = f"""You are classifying a data analytics question.
+    prompt = f"""You are classifying a data analytics question for an e-commerce beauty brand (Limese).
 
 Previous conversation:
 {history_text}
@@ -46,7 +60,7 @@ Current question: "{question}"
 
 Classify this question and return JSON only:
 {{
-  "type": "<chart_request|data_query|follow_up|analytical_question|comparison|trend_analysis|export_request|greeting>",
+  "type": "<chart_request|data_query|follow_up|analytical_question|insight_request|comparison|trend_analysis|export_request|greeting>",
   "chart_type_hint": "<bar|line|pie|scatter|heatmap|gauge|table|area|treemap|null>",
   "time_range": "<last_7_days|last_30_days|last_quarter|last_year|ytd|custom|null>",
   "aggregation": "<sum|count|avg|max|min|null>",
@@ -55,22 +69,34 @@ Classify this question and return JSON only:
   "is_follow_up": <true|false>,
   "needs_comparison": <true|false>,
   "confidence": <0.0-1.0>,
-  "rephrased_question": "<clearer version of the question for SQL generation>"
+  "rephrased_question": "<clearer standalone version of the question with full context>"
 }}
 
 Rules:
 - chart_request: user explicitly wants a chart/graph/visualization
 - data_query: user wants to see/query data without specifying chart
 - analytical_question: "why is X", "explain X", "what caused X" — needs data + narrative explanation
-- follow_up: references previous result ("now break that down by...", "make it a line chart")
+- follow_up: references previous result ("now break that down by...", "make it a line chart", "how do these compare")
+- insight_request: wants analysis ("why is X dropping?", "what's the trend?")
 - comparison: comparing two things, periods, or categories
-- trend_analysis: wants to see changes over time"""
+- trend_analysis: wants to see changes over time
+- Chart Type Selection Rules:
+  * For trend/time series (e.g. monthly sales, daily order trends): hint `line` or `area`.
+  * For ranking/comparing distinct categories (e.g. sales by brand, brand performance): hint `bar`.
+  * For proportions/shares of a whole (e.g. platform share, brand contribution): hint `pie`.
+  * For conversion/customer journey stages: hint `funnel`.
+  * For multi-dimensional correlations (e.g. sales by day and hour): hint `heatmap`.
+  * For a single KPI value or speed-style target: hint `gauge`.
+- IMPORTANT: For follow_up questions, make "rephrased_question" a COMPLETE standalone question
+  that includes what "these", "that", "it", "them" refers to based on the conversation history.
+  Example: if last question was about Skincare vs Makeup revenue and user asks "compare with 2024",
+  rephrase as "Compare Skincare vs Makeup revenue by month in 2024 vs 2025"."""
 
     try:
         resp = await call_llm(
             messages=[{"role": "user", "content": prompt}],
             task="routing",
-            max_tokens=300,
+            max_tokens=350,
             temperature=0.0,
         )
         raw = resp.content.strip()
@@ -87,5 +113,23 @@ Rules:
             "rephrased_question": question,
         }
 
-    log.info("intent.classified", type=intent.get("type"), confidence=intent.get("confidence"))
+    if not intent or not isinstance(intent, dict):
+        intent = {
+            "type": "data_query",
+            "entities": [],
+            "is_follow_up": False,
+            "confidence": 0.5,
+            "rephrased_question": question,
+        }
+
+    # For follow-up questions with vague pronouns, ensure we enriched the rephrased question.
+    # If the LLM produced an identical rephrased question, enrich it ourselves.
+    rephrased_q = intent.get("rephrased_question") or ""
+    if intent.get("is_follow_up") and rephrased_q.strip() == question.strip():
+        last_ctx = _get_last_assistant_context(history)
+        if last_ctx:
+            intent["rephrased_question"] = f"{question} (Context from previous answer: {last_ctx[:200]})"
+
+    log.info("intent.classified", type=intent.get("type"), confidence=intent.get("confidence"),
+             rephrased=(intent.get("rephrased_question") or "")[:80])
     return {**state, "intent": intent}
