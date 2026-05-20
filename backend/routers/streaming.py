@@ -1,6 +1,6 @@
 """
 SSE Streaming Endpoint for Real-time Agent Progress
-Replaces polling with Server-Sent Events for instant feedback.
+Streams actual node execution progress with partial results.
 """
 from __future__ import annotations
 import json
@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.agent.graph import get_graph
+from backend.agent.streaming_graph import get_streaming_graph
 from backend.agent.state import AnalyticsState
 from backend.database import get_db
 from backend.models.conversation import Conversation, Message
@@ -35,24 +35,6 @@ class StreamingQueryRequest(BaseModel):
     user_id: str = "anonymous"
 
 
-class StreamingProgress:
-    """Progress updates for SSE stream."""
-
-    def __init__(self, step: str, progress: int, data: dict = None):
-        self.step = step
-        self.progress = progress
-        self.data = data or {}
-
-    def to_json(self) -> str:
-        return json.dumps({
-            "type": "progress",
-            "step": self.step,
-            "progress": self.progress,
-            "data": self.data,
-            "timestamp": asyncio.get_event_loop().time()
-        })
-
-
 async def _stream_agent_execution(
     question: str,
     datasource_id: str,
@@ -61,8 +43,8 @@ async def _stream_agent_execution(
     db: AsyncSession,
 ) -> AsyncGenerator[str, None]:
     """
-    Execute agent and stream progress updates via SSE.
-    Yields JSON strings for each completed step.
+    Execute agent and stream REAL progress updates via SSE.
+    Yields JSON strings as each node completes with partial results.
     """
     # Emit start
     yield f"data: {json.dumps({'type': 'start', 'message': 'Starting analysis...'})}\n\n"
@@ -109,21 +91,9 @@ async def _stream_agent_execution(
     db.add(user_msg)
     await db.flush()
 
-    # Step progress tracking
-    steps = [
-        ("understanding", 10, "Understanding your question..."),
-        ("schema_discovery", 20, "Discovering relevant data..."),
-        ("sql_generation", 35, "Generating SQL query..."),
-        ("query_execution", 50, "Executing query..."),
-        ("analysis", 70, "Analyzing results..."),
-        ("visualization", 85, "Creating visualization..."),
-        ("response", 100, "Composing response..."),
-    ]
-
-    # Run agent with progress tracking
+    # Run agent with REAL progress tracking
     try:
-        # Execute actual agent
-        graph = get_graph()
+        graph_runner = get_streaming_graph()
         initial_state = AnalyticsState(
             session_id=conv_id,
             conversation_id=conv_id,
@@ -134,41 +104,40 @@ async def _stream_agent_execution(
             step_errors=[],
         )
 
-        # Emit progress for each step
-        for step_name, progress, message in steps:
-            yield f"data: {json.dumps({'type': 'progress', 'step': step_name, 'progress': progress, 'message': message})}\n\n"
-            await asyncio.sleep(0.05)  # Brief delay for visual feedback
+        # Stream real progress from graph execution
+        async for update in graph_runner.astream(initial_state):
+            yield f"data: {json.dumps(update)}\n\n"
 
-        final_state = await graph.ainvoke(initial_state)
-        result = final_state.get("final_response", {})
-        result["conversation_id"] = conv_id
+            # If this is the final complete message, save to database
+            if update.get("type") == "complete":
+                result = update["result"]
+                result["conversation_id"] = conv_id
 
-        # Save assistant message
-        assistant_msg = Message(
-            id=str(uuid.uuid4()),
-            conversation_id=conv_id,
-            role="assistant",
-            content=result.get("text", ""),
-            sql_query=result.get("sql", ""),
-            query_results={
-                "columns": result.get("columns", []),
-                "rows": result.get("rows", [])[:50],
-                "row_count": result.get("row_count", 0),
-            },
-            viz_config=result.get("chart"),
-            insights=result.get("insights", []),
-            follow_up_questions=result.get("follow_up_questions", []),
-            model_used=result.get("model_used", ""),
-            latency_ms=result.get("total_latency_ms", 0),
-            error=result.get("error"),
-        )
-        db.add(assistant_msg)
-        await db.commit()
-
-        # Emit final result
-        yield f"data: {json.dumps({'type': 'complete', 'result': result})}\n\n"
+                # Save assistant message
+                assistant_msg = Message(
+                    id=str(uuid.uuid4()),
+                    conversation_id=conv_id,
+                    role="assistant",
+                    content=result.get("text", ""),
+                    sql_query=result.get("sql", ""),
+                    query_results={
+                        "columns": result.get("columns", []),
+                        "rows": result.get("rows", [])[:50],
+                        "row_count": result.get("row_count", 0),
+                    },
+                    viz_config=result.get("chart"),
+                    insights=result.get("insights", []),
+                    follow_up_questions=result.get("follow_up_questions", []),
+                    model_used=result.get("model_used", ""),
+                    latency_ms=result.get("total_latency_ms", 0),
+                    error=result.get("error"),
+                )
+                db.add(assistant_msg)
+                await db.commit()
 
     except Exception as exc:
+        import traceback
+        traceback.print_exc()
         yield f"data: {json.dumps({'type': 'error', 'error': str(exc)})}\n\n"
 
 
@@ -181,15 +150,28 @@ async def stream_query(
     db: AsyncSession = Depends(get_db_dep),
 ):
     """
-    SSE streaming endpoint for real-time agent progress.
+    SSE streaming endpoint for REAL-TIME agent progress.
+
+    Streams actual progress as each pipeline node completes:
+    - Intent classification (what the user wants)
+    - SQL generation (the query being built)
+    - Query execution (row count as soon as available)
+    - Insights (key metrics found)
+    - Visualization (chart type)
+    - Final response
 
     Usage in frontend:
     ```
     const eventSource = new EventSource('/api/v1/copilot/stream?question=Show+me+sales');
     eventSource.onmessage = (e) => {
         const data = JSON.parse(e.data);
-        if (data.type === 'progress') updateProgress(data);
+        if (data.type === 'progress') {
+            updateProgress(data.progress, data.message);
+            if (data.data.sql) showSQL(data.data.sql);
+            if (data.data.row_count !== undefined) showRowCount(data.data.row_count);
+        }
         if (data.type === 'complete') displayResult(data.result);
+        if (data.type === 'error') showError(data.error);
     };
     ```
     """
@@ -206,5 +188,40 @@ async def stream_query(
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",  # Disable nginx buffering
+        },
+    )
+
+
+@router.post("/stream")
+async def stream_query_post(
+    request: StreamingQueryRequest,
+    db: AsyncSession = Depends(get_db_dep),
+):
+    """
+    POST version of streaming endpoint for better request handling.
+
+    Request body:
+    ```json
+    {
+        "question": "Show me revenue by platform",
+        "datasource_id": "default",
+        "conversation_id": "optional-existing-id",
+        "user_id": "user-123"
+    }
+    ```
+    """
+    return StreamingResponse(
+        _stream_agent_execution(
+            question=request.question,
+            datasource_id=request.datasource_id,
+            conversation_id=request.conversation_id,
+            user_id=request.user_id,
+            db=db,
+        ),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
         },
     )

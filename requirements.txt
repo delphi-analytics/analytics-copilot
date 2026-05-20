@@ -27,3 +27,4 @@ openai
 clickhouse-connect
 qdrant-client
 fastembed
+minio

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { BarChart2, Database, Clock, History, Plus, Trash2 } from 'lucide-react'
+import { BarChart2, Database, Clock, History, Plus, Trash2, Moon, Sun } from 'lucide-react'
 import { useChatStore, ChatSession } from '../store/chat'
+import { useThemeStore } from '../store/theme'
 import { sendQuery } from '../api/client'
 import { ChatMessageComponent } from '../components/Chat/ChatMessage'
 import { ChatInput } from '../components/Chat/ChatInput'
@@ -12,6 +13,8 @@ export const CopilotPage: React.FC = () => {
     setConversationId, setUploadedFile, setDatasourceId, loadSession, purgeExpiredSessions,
     deleteSession, deleteMessage
   } = useChatStore()
+
+  const { theme, toggleTheme } = useThemeStore()
 
   // Permanently reset to ClickHouse datasource — clear any stale uploaded file from localStorage
   useEffect(() => {
@@ -91,22 +94,30 @@ export const CopilotPage: React.FC = () => {
 
 
   return (
-    <div className="flex flex-col h-screen bg-slate-50">
+    <div className={`flex flex-col h-screen ${theme === 'dark' ? 'bg-slate-900' : 'bg-slate-50'}`}>
       {/* Header */}
-      <header className="flex items-center justify-between px-6 py-4 bg-white border-b border-slate-200 shadow-sm z-10">
+      <header className={`flex items-center justify-between px-6 py-4 border-b shadow-sm z-10 ${
+        theme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'
+      }`}>
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center">
             <BarChart2 size={18} className="text-white" />
           </div>
           <div>
-            <h1 className="font-semibold text-slate-800 text-sm">Data Visualization Copilot</h1>
-            <p className="text-xs text-slate-400">AI-Powered Analytics · Limese</p>
+            <h1 className={`font-semibold text-sm ${theme === 'dark' ? 'text-slate-100' : 'text-slate-800'}`}>
+              Data Visualization Copilot
+            </h1>
+            <p className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-400'}`}>
+              AI-Powered Analytics · Limese
+            </p>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
           {/* Datasource indicator */}
-          <div className="flex items-center gap-2 bg-slate-100 rounded-lg px-3 py-1.5 text-xs text-slate-600">
+          <div className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs ${
+            theme === 'dark' ? 'bg-slate-700 text-slate-300' : 'bg-slate-100 text-slate-600'
+          }`}>
             <Database size={12} className="text-green-500" />
             <span>Limese Analytics · ClickHouse</span>
           </div>
@@ -177,6 +188,20 @@ export const CopilotPage: React.FC = () => {
                 <Plus size={14} /> New Chat
               </button>
             )}
+
+            {/* Theme Toggle */}
+            <button
+              onClick={toggleTheme}
+              className={`flex items-center gap-1.5 text-xs transition px-2 py-1.5 rounded-lg ${
+                theme === 'dark'
+                  ? 'text-slate-300 hover:bg-slate-700'
+                  : 'text-slate-500 hover:bg-slate-100'
+              }`}
+              title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+            >
+              {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
+              <span className="hidden sm:inline">{theme === 'dark' ? 'Light' : 'Dark'}</span>
+            </button>
           </div>
         </div>
       </header>
@@ -194,6 +219,7 @@ export const CopilotPage: React.FC = () => {
                 onFollowUp={handleSend}
                 onEdit={(id, content) => setChatInputValue(content)}
                 onDelete={(id) => setMessageToDelete(id)}
+                theme={theme}
               />
             ))}
             {isLoading && <ThinkingIndicator seconds={elapsedSeconds} />}
@@ -203,7 +229,7 @@ export const CopilotPage: React.FC = () => {
       </div>
 
       {/* Input */}
-      <div className="bg-white border-t border-slate-200">
+      <div className={`border-t ${theme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
         <div className="max-w-4xl mx-auto">
           <ChatInput
             value={chatInputValue}

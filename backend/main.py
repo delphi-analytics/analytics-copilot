@@ -76,6 +76,112 @@ def create_app() -> FastAPI:
         background_tasks.add_task(_refresh)
         return {"status": "refresh_started", "message": "Scanning database in background. Check /api/v1/db/context in ~60 seconds."}
 
+    @app.post("/api/v1/db/scan", tags=["DB Intelligence"])
+    async def scan_database(
+        database_url: str,
+        output_format: str = "json",  # json, markdown, or both
+        background_tasks: BackgroundTasks = None
+    ) -> dict:
+        """
+        Scan any database and generate comprehensive documentation.
+
+        This endpoint creates a README-style documentation that helps understand:
+        - All tables and their structures
+        - Column types, constraints, and sample values
+        - Foreign key relationships
+        - Join patterns between tables
+
+        STORAGE: Documentation is saved to ./data/db_scans/{scan_id}/
+        Contains: documentation.json, README.md, llm_context.txt
+
+        Example:
+            POST /api/v1/db/scan?database_url=sqlite:///./dvc.db&output_format=both
+        """
+        from backend.services.universal_db_scanner import scan_datasource, save_scan_to_storage
+        import uuid
+
+        # Generate unique scan ID
+        scan_id = str(uuid.uuid4())[:8]
+
+        if background_tasks and output_format != "markdown":
+            # Run in background for large databases
+            def _scan():
+                try:
+                    doc = scan_datasource(database_url, None)
+                    save_scan_to_storage(doc, scan_id)
+                    log.info("db_scan.complete", scan_id=scan_id)
+                except Exception as e:
+                    log.error("db_scan.failed", scan_id=scan_id, error=str(e))
+
+            background_tasks.add_task(_scan)
+            return {
+                "status": "scan_started",
+                "scan_id": scan_id,
+                "message": f"Database scan running in background. Results will be saved to ./data/db_scans/{scan_id}/"
+            }
+        else:
+            # Run synchronously for small databases or markdown-only requests
+            try:
+                from backend.services.universal_db_scanner import UniversalDatabaseScanner
+
+                doc = scan_datasource(database_url, None)
+                storage_info = save_scan_to_storage(doc, scan_id)
+
+                result = {
+                    "status": "complete",
+                    "scan_id": scan_id,
+                    "database": doc.database_name,
+                    "database_type": doc.database_type,
+                    "tables_count": len(doc.tables),
+                    "relationships_count": len(doc.relationships),
+                    "storage_path": storage_info["storage_path"],
+                }
+
+                if output_format in ("markdown", "both"):
+                    scanner = UniversalDatabaseScanner(database_url)
+                    result["markdown"] = scanner.generate_markdown_readme(doc)
+                    result["llm_context"] = scanner.generate_llm_context(doc)
+
+                return result
+            except Exception as e:
+                return {
+                    "status": "error",
+                    "error": str(e),
+                    "message": f"Failed to scan database. Check the database URL and credentials."
+                }
+
+    @app.get("/api/v1/db/scan/{scan_id}", tags=["DB Intelligence"])
+    async def get_scan_results(scan_id: str) -> dict:
+        """Retrieve results of a previous database scan."""
+        from pathlib import Path
+        from backend.services.universal_db_scanner import DB_SCANS_PATH
+
+        scan_dir = DB_SCANS_PATH / scan_id
+        json_path = scan_dir / "documentation.json"
+        md_path = scan_dir / "README.md"
+
+        if not json_path.exists():
+            return {"error": "Scan not found", "scan_id": scan_id}
+
+        import json
+        with open(json_path) as f:
+            doc = json.load(f)
+
+        result = {
+            "scan_id": scan_id,
+            "database": doc.get("database_name"),
+            "scanned_at": doc.get("scanned_at"),
+            "storage_path": str(scan_dir),
+            "tables": {k: {"row_count": v.get("row_count"), "columns": len(v.get("columns", []))}
+                      for k, v in doc.get("tables", {}).items()},
+            "relationships": doc.get("relationships", []),
+        }
+
+        if md_path.exists():
+            result["markdown_path"] = str(md_path)
+
+        return result
+
     # Detect built frontend
     from fastapi.responses import RedirectResponse, HTMLResponse
 

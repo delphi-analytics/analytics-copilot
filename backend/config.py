@@ -46,6 +46,13 @@ class Settings(BaseSettings):
     qdrant_collection: str = "dvc_memory"
     qdrant_enabled: bool = False   # off by default — uses in-memory fallback
 
+    # MinIO (Conversation History Storage)
+    minio_endpoint: str = ""   # e.g., "localhost:9000" or "minio.example.com:9000"
+    minio_access_key: str = ""
+    minio_secret_key: str = ""
+    minio_secure: bool = False  # Set True for HTTPS
+    minio_bucket_name: str = "analytics-copilot-conversations"
+
     # Integrations
     slack_bot_token: str = ""
     slack_signing_secret: str = ""

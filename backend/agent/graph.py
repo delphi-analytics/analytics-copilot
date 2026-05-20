@@ -35,6 +35,11 @@ def _should_skip_sql(state: AnalyticsState) -> str:
     question = state.get("user_question", "")
     history = state.get("conversation_history", [])
 
+    # Check for conversational intents that should skip SQL entirely
+    # These can come from either pre-filter OR LLM classification
+    if intent_type in ("greeting", "conversational", "off_topic", "export_request"):
+        return "skip_to_respond"
+
     # Check for insight follow-up (e.g., "why is this happening?")
     if _is_insight_followup(question, history):
         return "insight_followup"
@@ -42,10 +47,6 @@ def _should_skip_sql(state: AnalyticsState) -> str:
     # Analytical questions need data but different treatment
     if intent_type == "analytical_question":
         return "generate_sql"  # Still get data, but respond differently
-
-    # Skip for greetings or export requests
-    if intent_type in ("greeting", "export_request"):
-        return "skip_to_respond"
 
     return "generate_sql"
 
@@ -123,6 +124,17 @@ async def run_analytics_agent(
     t0 = time.perf_counter()
 
     from backend.agent.memory import vector_memory
+    from backend.services.minio_conversation import minio_conversation_store
+
+    # Load conversation history from MinIO if not provided
+    if not conversation_history and conversation_id:
+        minio_history = minio_conversation_store.get_conversation_history(
+            user_id=user_id,
+            conversation_id=conversation_id,
+        )
+        if minio_history:
+            conversation_history = minio_history
+            log.info("agent.loaded_minio_history", messages=len(minio_history))
 
     cached_sql = None
     if vector_memory.enabled:

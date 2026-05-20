@@ -60,7 +60,7 @@ Current question: "{question}"
 
 Classify this question and return JSON only:
 {{
-  "type": "<chart_request|data_query|follow_up|analytical_question|insight_request|comparison|trend_analysis|export_request|greeting>",
+  "type": "<chart_request|data_query|follow_up|analytical_question|insight_request|comparison|trend_analysis|export_request|greeting|conversational>",
   "chart_type_hint": "<bar|line|pie|scatter|heatmap|gauge|table|area|treemap|null>",
   "time_range": "<last_7_days|last_30_days|last_quarter|last_year|ytd|custom|null>",
   "aggregation": "<sum|count|avg|max|min|null>",
@@ -73,9 +73,11 @@ Classify this question and return JSON only:
 }}
 
 Rules:
+- greeting: Simple greetings like "hi", "hello", "gm", "good morning" — NO SQL needed, respond conversationally
+- conversational: "who are you", "what can you do", "how are you", "what are you doing", "help", "tell me about yourself" — respond conversationally about the assistant's capabilities
 - chart_request: user explicitly wants a chart/graph/visualization
 - data_query: user wants to see/query data without specifying chart
-- analytical_question: "why is X", "explain X", "what caused X" — needs data + narrative explanation
+- analytical_question: "why is X", "explain X", "what caused X", "how is X" — needs data + narrative explanation
 - follow_up: references previous result ("now break that down by...", "make it a line chart", "how do these compare")
 - insight_request: wants analysis ("why is X dropping?", "what's the trend?")
 - comparison: comparing two things, periods, or categories

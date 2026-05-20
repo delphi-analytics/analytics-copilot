@@ -17,9 +17,20 @@ def _compute_basic_stats(rows: list, columns: list) -> dict:
     if not rows or not columns:
         return {}
 
+    # Columns that should NEVER be treated as numeric metrics
+    NON_METRIC_COLUMNS = {
+        "internal_sku", "external_sku", "sku", "product_id", "item_id", "order_id",
+        "id", "customer_id", "user_id", "platform_id", "category_id", "brand_id",
+        "parent_id", "ref_id", "reference_id", "code", "pincode", "zipcode"
+    }
+
     stats: dict = {}
     # Find numeric columns
     for col in columns:
+        # Skip ID/SKU columns - these are identifiers, not metrics
+        if any(id_col in col.lower() for id_col in NON_METRIC_COLUMNS):
+            continue
+
         values = []
         for row in rows:
             val = row.get(col) if isinstance(row, dict) else None
@@ -58,11 +69,23 @@ def _generate_rule_based_fallback_insights(rows: list, columns: list, basic_stat
             return f"{sign}{prefix}{(abs_val / 1_000):.1f}K"
         return f"{sign}{prefix}{abs_val:,.2f}"
 
-    # 1. Populate key metrics dynamically
+    # 1. Populate key metrics dynamically (only meaningful business metrics)
+    # Skip ID/SKU columns and only include actual business metrics
+    NON_METRIC_PATTERNS = ["sku", "id", "_id", "code", "pincode", "zipcode"]
+
     for col, stats in basic_stats.items():
         col_lower = col.lower()
-        is_money = any(kw in col_lower for kw in ["revenue", "sales", "price", "subtotal", "amount", "income", "value"])
-        key_metrics[col] = local_fmt(stats.get("total", 0), is_money)
+
+        # Skip non-metric columns
+        if any(pattern in col_lower for pattern in NON_METRIC_PATTERNS):
+            continue
+
+        # Only include columns that are clearly business metrics
+        is_money = any(kw in col_lower for kw in ["revenue", "sales", "price", "subtotal", "amount", "income", "value", "profit", "cost", "mrp"])
+        is_count = any(kw in col_lower for kw in ["quantity", "units", "count", "orders", "inventory", "stock", "volume"])
+
+        if is_money or is_count:
+            key_metrics[col] = local_fmt(stats.get("total", 0), is_money)
 
     # 2. Derive dynamic bullet point insights
     str_cols = []
