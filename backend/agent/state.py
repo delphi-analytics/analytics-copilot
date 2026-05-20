@@ -63,6 +63,11 @@ class AnalyticsState(TypedDict, total=False):
     follow_up_questions: list[str]
     final_response: dict  # complete response sent to frontend
 
+    # Routing & Pre-filter fields
+    skip_pipeline: bool
+    pre_filter_response: dict  # Response from rule-based pre-filter
+    insight_followup_response: dict  # Response from insight follow-up handler
+
     # Metadata
     model_used: str
     total_tokens: int

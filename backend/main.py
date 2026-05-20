@@ -13,7 +13,7 @@ import os
 
 from backend.config import settings
 from backend.database import init_db
-from backend.routers import copilot, dashboards, canary_compat
+from backend.routers import copilot, dashboards, canary_compat, streaming
 from backend.data.connector import register_datasource
 
 log = structlog.get_logger(__name__)
@@ -36,6 +36,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(copilot.router, prefix="/api/v1/copilot", tags=["AI Copilot"])
+    app.include_router(streaming.router, prefix="/api/v1/copilot", tags=["AI Copilot - Streaming"])
     app.include_router(dashboards.router, prefix="/api/v1/dashboards", tags=["Dashboards"])
     app.include_router(canary_compat.router, prefix="/api/v1", tags=["Canary Compatible"])
 

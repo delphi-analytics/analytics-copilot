@@ -100,10 +100,20 @@ def _pivot_and_build_multi_series(columns: list, rows: list, title: str, chart_t
             "color": COLORS,
             "tooltip": {"trigger": "axis"},
             "legend": {"top": "8%", "show": len(series_list) > 1},
-            "xAxis": {"type": "category", "data": x_data, "axisLabel": {"rotate": 30 if len(x_data) > 8 else 0}},
+            "xAxis": {
+                "type": "category",
+                "data": x_data,
+                "axisLabel": {
+                    "rotate": 30 if len(x_data) > 6 else 0,
+                    "interval": 0,  # Show all labels
+                    "overflow": "truncate",
+                    "width": 80,  # Max width before truncation
+                    "ellipsis": "..."
+                }
+            },
             "yAxis": {"type": "value"},
             "series": series_list,
-            "grid": {"left": "10%", "right": "5%", "bottom": "15%", "top": "18%"},
+            "grid": {"left": "12%", "right": "5%", "bottom": "25%" if len(x_data) > 6 else "15%", "top": "18%"},
         }
 
     # --- CASE 2: Two categorical + one numeric ---
@@ -171,10 +181,20 @@ def _pivot_and_build_multi_series(columns: list, rows: list, title: str, chart_t
             "color": COLORS,
             "tooltip": {"trigger": "axis"},
             "legend": {"top": "8%", "show": len(series_list) > 1},
-            "xAxis": {"type": "category", "data": x_data, "axisLabel": {"rotate": 30 if len(x_data) > 8 else 0}},
+            "xAxis": {
+                "type": "category",
+                "data": x_data,
+                "axisLabel": {
+                    "rotate": 30 if len(x_data) > 6 else 0,
+                    "interval": 0,  # Show all labels
+                    "overflow": "truncate",
+                    "width": 80,
+                    "ellipsis": "..."
+                }
+            },
             "yAxis": {"type": "value"},
             "series": series_list,
-            "grid": {"left": "10%", "right": "5%", "bottom": "15%", "top": "18%"},
+            "grid": {"left": "12%", "right": "5%", "bottom": "25%" if len(x_data) > 6 else "15%", "top": "18%"},
         }
 
     # --- FALLBACK ---
@@ -194,11 +214,21 @@ def _pivot_and_build_multi_series(columns: list, rows: list, title: str, chart_t
         "title": {"text": title, "left": "center"},
         "color": COLORS,
         "tooltip": {"trigger": "axis"},
-        "xAxis": {"type": "category", "data": x_data, "axisLabel": {"rotate": 30 if len(x_data) > 8 else 0}},
+        "xAxis": {
+            "type": "category",
+            "data": x_data,
+            "axisLabel": {
+                "rotate": 30 if len(x_data) > 6 else 0,
+                "interval": 0,  # Show all labels
+                "overflow": "truncate",
+                "width": 80,
+                "ellipsis": "..."
+            }
+        },
         "yAxis": {"type": "value"},
         "series": [{"name": y_col, "type": chart_type, "data": y_data, "smooth": chart_type == "line",
                     "areaStyle": {"opacity": 0.05} if chart_type == "line" else None}],
-        "grid": {"left": "10%", "right": "5%", "bottom": "15%"},
+        "grid": {"left": "12%", "right": "5%", "bottom": "25%" if len(x_data) > 6 else "15%"},
     }
 
 
@@ -223,13 +253,34 @@ def _build_pie_chart(columns: list, rows: list, title: str) -> dict:
         except (ValueError, TypeError):
             pass
 
+    # Use simpler labels for small screens, detailed for larger
+    label_formatter = "{b}\n{d}%" if len(data) <= 6 else "{d}%"
+
     return {
-        "title": {"text": title, "left": "center"},
+        "title": {"text": title, "left": "center", "textStyle": {"fontSize": 14}},
         "color": COLORS,
-        "tooltip": {"trigger": "item", "formatter": "{b}: {c} ({d}%)"},
-        "legend": {"orient": "vertical", "left": "left"},
-        "series": [{"type": "pie", "radius": ["40%", "70%"], "data": data,
-                    "label": {"show": True, "formatter": "{b}: {d}%"}}],
+        "tooltip": {"trigger": "item", "formatter": "{b}: ₹{c} ({d}%)"},
+        "legend": {"orient": "horizontal" if len(data) > 6 else "vertical",
+                   "left": "center" if len(data) > 6 else "left",
+                   "top": "bottom" if len(data) > 6 else "middle",
+                   "type": "scroll" if len(data) > 10 else "plain"},
+        "series": [{
+            "type": "pie",
+            "radius": ["35%", "65%"],
+            "center": ["50%", "45%"],
+            "data": data,
+            "label": {
+                "show": True,
+                "formatter": label_formatter,
+                "fontSize": 11,
+                "overflow": "truncate",
+                "ellipsis": "..."
+            },
+            "emphasis": {
+                "label": {"show": True, "fontSize": 14, "fontWeight": "bold"}
+            }
+        }],
+        "grid": {"left": "5%", "right": "5%", "bottom": "20%" if len(data) > 6 else "5%", "top": "10%"},
     }
 
 

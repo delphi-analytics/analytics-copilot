@@ -30,7 +30,10 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     openai_api_key: str = ""
     gemini_api_key: str = ""
+    mistral_api_key: str = ""
     openrouter_api_key: str = ""
+    deepseek_api_key: str = ""
+    cohere_api_key: str = ""
 
     # Model routing
     llm_fast_model: str = "groq/llama-3.1-8b-instant"        # Intent, routing decisions

@@ -55,7 +55,20 @@ async def get_schema(datasource_id: str) -> dict:
 
 
 async def execute_query(datasource_id: str, sql: str, timeout: int = 30) -> dict:
-    """Execute SQL and return results as {columns: [...], rows: [...]}."""
+    """
+    Execute SQL and return results as {columns: [...], rows: [...]}.
+
+    SECURITY: Read-only enforcement at connector level (Layer 2 defense).
+    Even if SQL passes initial validation, it's re-checked here before execution.
+    """
+    # ─── SECURITY LAYER 2: Read-only enforcement at execution ────────────────
+    if not await _is_readonly_query(sql):
+        log.error("query.blocked_modification_attempt", sql_preview=sql[:200], datasource=datasource_id)
+        raise PermissionError(
+            "READ-ONLY ACCESS: Data modification is not allowed. "
+            "Only SELECT queries are permitted. This action has been logged."
+        )
+
     ds = _get_datasource(datasource_id)
     ds_type = ds.get("type", "sqlite")
 
@@ -67,6 +80,52 @@ async def execute_query(datasource_id: str, sql: str, timeout: int = 30) -> dict
         return result
     except asyncio.TimeoutError:
         raise RuntimeError(f"Query timed out after {timeout} seconds")
+
+
+async def _is_readonly_query(sql: str) -> bool:
+    """
+    Verify that a query is read-only (SELECT only).
+    This is a second layer of defense - even if SQL validation is bypassed,
+    the connector will refuse to execute modifying queries.
+    """
+    if not sql:
+        return False
+
+    sql_upper = sql.upper().strip()
+
+    # Must start with SELECT (WITH allowed for CTEs that end in SELECT)
+    if not (sql_upper.startswith("SELECT") or sql_upper.startswith("WITH")):
+        log.error("security.readonly_violation_no_select", sql_preview=sql[:100])
+        return False
+
+    # Check for modifying keywords anywhere in the query
+    modifying_keywords = [
+        "INSERT", "UPDATE", "DELETE", "DROP", "TRUNCATE", "ALTER",
+        "CREATE", "GRANT", "REVOKE", "COMMIT", "ROLLBACK",
+        "INTO OUTFILE", "INTO DUMPFILE", "LOAD DATA",
+    ]
+
+    for keyword in modifying_keywords:
+        # Use word boundary to avoid false positives
+        pattern = rf"\b{keyword}\b"
+        import re
+        if re.search(pattern, sql_upper):
+            log.error("security.readonly_violation_keyword",
+                      keyword=keyword,
+                      sql_preview=sql[:100],
+                      severity="CRITICAL")
+            return False
+
+    # Check for multi-statement attempts (semicolons followed by dangerous ops)
+    if ";" in sql:
+        parts = sql.split(";")
+        if len(parts) > 1:
+            for part in parts[1:]:
+                if any(kw in part.upper() for kw in ["SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE"]):
+                    log.error("security.readonly_violation_multistatement", sql_preview=sql[:100])
+                    return False
+
+    return True
 
 
 async def _execute_on_datasource(ds_type: str, config: dict, sql: str, timeout: int = 30) -> dict:

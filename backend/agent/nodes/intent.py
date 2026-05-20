@@ -8,12 +8,31 @@ import json
 import structlog
 from backend.agent.state import AnalyticsState
 from backend.agent.llm import call_llm
+from backend.agent.pre_filter import pre_classify
 
 log = structlog.get_logger(__name__)
 
 
 async def understand_intent(state: AnalyticsState) -> AnalyticsState:
     question = state["user_question"]
+
+    # ─── STEP 1: Rule-based pre-filter (saves tokens, instant responses) ────────
+    pre_result = pre_classify(question)
+
+    # If pre-filter is confident, skip LLM entirely
+    if pre_result["skip_llm"]:
+        log.info("intent.pre_filter", type=pre_result["type"])
+        return {
+            **state,
+            "intent": {
+                "type": pre_result["type"],
+                "confidence": pre_result["confidence"],
+            },
+            "skip_pipeline": True,
+            "pre_filter_response": pre_result.get("response"),
+        }
+
+    # ─── STEP 2: LLM-based intent classification for ambiguous queries ────────
     history = state.get("conversation_history", [])[-4:]  # last 2 turns for context
 
     history_text = "\n".join(f"{m['role']}: {m['content'][:200]}" for m in history) if history else "None"
@@ -27,7 +46,7 @@ Current question: "{question}"
 
 Classify this question and return JSON only:
 {{
-  "type": "<chart_request|data_query|follow_up|insight_request|comparison|trend_analysis|export_request|greeting>",
+  "type": "<chart_request|data_query|follow_up|analytical_question|comparison|trend_analysis|export_request|greeting>",
   "chart_type_hint": "<bar|line|pie|scatter|heatmap|gauge|table|area|treemap|null>",
   "time_range": "<last_7_days|last_30_days|last_quarter|last_year|ytd|custom|null>",
   "aggregation": "<sum|count|avg|max|min|null>",
@@ -42,8 +61,8 @@ Classify this question and return JSON only:
 Rules:
 - chart_request: user explicitly wants a chart/graph/visualization
 - data_query: user wants to see/query data without specifying chart
+- analytical_question: "why is X", "explain X", "what caused X" — needs data + narrative explanation
 - follow_up: references previous result ("now break that down by...", "make it a line chart")
-- insight_request: wants analysis ("why is X dropping?", "what's the trend?")
 - comparison: comparing two things, periods, or categories
 - trend_analysis: wants to see changes over time"""
 

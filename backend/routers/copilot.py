@@ -65,6 +65,46 @@ async def query(payload: QueryRequest, db: DbDep) -> QueryResponse:
       POST /api/v1/copilot/query
       {"question": "Show me sales by region last quarter", "datasource_id": "mydb"}
     """
+    # ─── SECURITY: Block modification requests BEFORE cache check ─────────────
+    question_upper = payload.question.upper()
+    dangerous_keywords = ["UPDATE", "DELETE", "DROP", "TRUNCATE", "ALTER", "INSERT", "CREATE", "GRANT"]
+    found_keyword = next((kw for kw in dangerous_keywords if kw in question_upper), None)
+    if found_keyword:
+        return QueryResponse(
+            conversation_id=str(uuid.uuid4()),
+            message_id=str(uuid.uuid4()),
+            text=(
+                "🔒 **You don't have permission to perform this action**\n\n"
+                f"You asked me to **{found_keyword}** data, but I only have **read-only access**.\n\n"
+                "I can:\n"
+                "• ✅ Query and analyze data\n"
+                "• ✅ Generate charts and visualizations\n"
+                "• ✅ Provide insights and explanations\n\n"
+                "I **cannot**:\n"
+                "• ❌ Modify, update, or delete records\n"
+                "• ❌ Create or drop tables\n"
+                "• ❌ Change database structure\n\n"
+                "Please use your database admin tools if you need to modify data. "
+                "I'm here to help you analyze and explore your data!"
+            ),
+            chart=None,
+            insights=["You attempted a data modification operation", "The system has read-only access enabled"],
+            key_metrics={},
+            follow_up_questions=[
+                "Show me the current data",
+                "What tables are available?",
+                "Help me analyze the data"
+            ],
+            sql="",
+            row_count=0,
+            viz_type=None,
+            columns=[],
+            rows=[],
+            total_latency_ms=0,
+            model_used="",
+            error=f"Read-only access: {found_keyword} operation not permitted",
+        )
+
     # Check LLM cache first (Canary pattern — 80% latency reduction on repeats)
     cache = _get_llm_cache()
     cached = await cache.get_async(question=payload.question, datasource_id=payload.datasource_id)
@@ -122,14 +162,38 @@ async def query(payload: QueryRequest, db: DbDep) -> QueryResponse:
     await db.flush()
 
     # Run the 7-step agent pipeline
-    agent_result = await run_analytics_agent(
-        question=payload.question,
-        datasource_id=payload.datasource_id,
-        session_id=conversation_id,
-        conversation_id=conversation_id,
-        conversation_history=conversation_history,
-        user_id=payload.user_id,
-    )
+    try:
+        agent_result = await run_analytics_agent(
+            question=payload.question,
+            datasource_id=payload.datasource_id,
+            session_id=conversation_id,
+            conversation_id=conversation_id,
+            conversation_history=conversation_history,
+            user_id=payload.user_id,
+        )
+    except PermissionError as exc:
+        # Read-only access violation - user-friendly error
+        agent_result = {
+            "error": str(exc),
+            "text": (
+                "🔒 **Read-Only Access**\n\n"
+                "I can only query and analyze data — I cannot modify, delete, or create records. "
+                "This is a security restriction to protect your data.\n\n"
+                "If you need to modify data, please use your database admin tools directly. "
+                "I'm here to help you explore and analyze your data!"
+            ),
+            "insights": [],
+            "key_metrics": {},
+            "follow_up_questions": [],
+            "sql": "",
+            "chart": None,
+            "viz_type": None,
+            "row_count": 0,
+            "columns": [],
+            "rows": [],
+            "total_latency_ms": 0,
+            "model_used": "",
+        }
 
     # Save assistant message
     assistant_msg = Message(
