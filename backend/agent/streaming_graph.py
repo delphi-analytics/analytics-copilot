@@ -104,6 +104,11 @@ class StreamingGraphRunner:
                     partial_data["intent"] = intent.get("type")
                     partial_data["rephrased_question"] = intent.get("rephrased_question")
 
+                elif node_name == "discover_schema":
+                    # Emit tables being used
+                    relevant_tables = result.get("relevant_tables", [])
+                    partial_data["tables"] = relevant_tables
+
                 elif node_name == "generate_sql":
                     partial_data["sql"] = result.get("sql_query", "")
 

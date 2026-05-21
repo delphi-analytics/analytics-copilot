@@ -13,7 +13,7 @@ import os
 
 from backend.config import settings
 from backend.database import init_db
-from backend.routers import copilot, dashboards, canary_compat, streaming
+from backend.routers import copilot, dashboards, canary_compat, streaming, auth, knowledge, admin, analytics
 from backend.data.connector import register_datasource
 
 log = structlog.get_logger(__name__)
@@ -35,6 +35,10 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    app.include_router(auth.router, prefix="/api/v1", tags=["Authentication"])
+    app.include_router(admin.router, prefix="/api/v1", tags=["Admin"])
+    app.include_router(analytics.router, prefix="/api/v1", tags=["Analytics"])
+    app.include_router(knowledge.router, prefix="/api/v1", tags=["Knowledge Management"])
     app.include_router(copilot.router, prefix="/api/v1/copilot", tags=["AI Copilot"])
     app.include_router(streaming.router, prefix="/api/v1/copilot", tags=["AI Copilot - Streaming"])
     app.include_router(dashboards.router, prefix="/api/v1/dashboards", tags=["Dashboards"])
@@ -218,6 +222,9 @@ def create_app() -> FastAPI:
         # caches context to disk, refreshes every 6 hours automatically.
         from backend.services.db_intelligence import start_background_refresh
         start_background_refresh()
+
+        # Import QueryLog model to ensure it's included in database metadata
+        from backend.models.query_log import QueryLog
 
     @app.get("/health", tags=["System"])
     async def health() -> dict:

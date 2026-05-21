@@ -12,6 +12,11 @@ class Settings(BaseSettings):
     secret_key: str = "change-me-in-production-32chars-min"
     api_prefix: str = "/api/v1"
 
+    # JWT Auth
+    jwt_secret_key: str = ""  # If empty, uses secret_key
+    access_token_expire_minutes: int = 30
+    refresh_token_expire_days: int = 7
+
     # Database (PostgreSQL — metadata, history, users)
     database_url: str = "sqlite+aiosqlite:///./dvc.db"
 
@@ -44,7 +49,7 @@ class Settings(BaseSettings):
     # Vector Memory (Qdrant)
     qdrant_url: str = "http://localhost:6333"
     qdrant_collection: str = "dvc_memory"
-    qdrant_enabled: bool = False   # off by default — uses in-memory fallback
+    qdrant_enabled: bool = True   # Enabled for v2 knowledge features
 
     # MinIO (Conversation History Storage)
     minio_endpoint: str = ""   # e.g., "localhost:9000" or "minio.example.com:9000"
@@ -60,6 +65,10 @@ class Settings(BaseSettings):
     smtp_port: int = 587
     smtp_user: str = ""
     smtp_password: str = ""
+
+    # Web Search (for comparison questions)
+    tavily_api_key: str = ""  # https://tavily.com/
+    serper_api_key: str = ""  # https://serper.dev/
 
     # Query limits
     max_rows_returned: int = 10000

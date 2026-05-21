@@ -13,6 +13,8 @@ import structlog
 from langgraph.graph import StateGraph, END
 
 from backend.agent.state import AnalyticsState
+from backend.agent.nodes.cache_check import check_qa_memory
+from backend.agent.nodes.general_llm import handle_general_query
 from backend.agent.nodes.intent import understand_intent
 from backend.agent.nodes.schema import discover_schema
 from backend.agent.nodes.sql_gen import generate_sql
@@ -25,6 +27,13 @@ from backend.agent.nodes.insight_followup import handle_insight_followup, _is_in
 log = structlog.get_logger(__name__)
 
 
+def _after_cache_check(state: AnalyticsState) -> str:
+    """Route after cache check: if cached answer, skip to respond."""
+    if state.get("skip_pipeline") and state.get("pre_filter_response"):
+        return "skip_to_respond"
+    return "understand_intent"
+
+
 def _should_skip_sql(state: AnalyticsState) -> str:
     """Route: skip SQL generation for greetings, analytical questions, or export requests."""
     # Check if pre-filter already handled this
@@ -35,9 +44,12 @@ def _should_skip_sql(state: AnalyticsState) -> str:
     question = state.get("user_question", "")
     history = state.get("conversation_history", [])
 
-    # Check for conversational intents that should skip SQL entirely
-    # These can come from either pre-filter OR LLM classification
-    if intent_type in ("greeting", "conversational", "off_topic", "export_request"):
+    # Check for conversational intents - route to general_llm for natural responses
+    if intent_type in ("greeting", "conversational", "off_topic"):
+        return "general_llm"
+
+    # Export requests skip to respond
+    if intent_type == "export_request":
         return "skip_to_respond"
 
     # Check for insight follow-up (e.g., "why is this happening?")
@@ -64,8 +76,10 @@ def build_graph() -> StateGraph:
     """Build and compile the LangGraph pipeline."""
     graph = StateGraph(AnalyticsState)
 
-    # Register all 7 nodes + insight follow-up
+    # Register all nodes (9 nodes + insight follow-up)
+    graph.add_node("check_qa_memory", check_qa_memory)
     graph.add_node("understand_intent", understand_intent)
+    graph.add_node("general_llm", handle_general_query)
     graph.add_node("discover_schema", discover_schema)
     graph.add_node("generate_sql", generate_sql)
     graph.add_node("execute_sql", execute_sql)
@@ -74,8 +88,18 @@ def build_graph() -> StateGraph:
     graph.add_node("compose_response", compose_response)
     graph.add_node("insight_followup", handle_insight_followup)
 
-    # Entry point
-    graph.set_entry_point("understand_intent")
+    # Entry point: check QA memory first
+    graph.set_entry_point("check_qa_memory")
+
+    # Route after cache check
+    graph.add_conditional_edges(
+        "check_qa_memory",
+        _after_cache_check,
+        {
+            "skip_to_respond": "compose_response",
+            "understand_intent": "understand_intent",
+        }
+    )
 
     # Linear pipeline with conditional routing
     graph.add_conditional_edges(
@@ -84,6 +108,7 @@ def build_graph() -> StateGraph:
         {
             "generate_sql": "discover_schema",
             "skip_to_respond": "compose_response",
+            "general_llm": "general_llm",
             "insight_followup": "insight_followup",
         }
     )
@@ -93,6 +118,7 @@ def build_graph() -> StateGraph:
     graph.add_edge("analyze_insights", "generate_viz_config")
     graph.add_edge("generate_viz_config", "compose_response")
     graph.add_edge("insight_followup", "compose_response")
+    graph.add_edge("general_llm", "compose_response")
     graph.add_edge("compose_response", END)
 
     return graph.compile()

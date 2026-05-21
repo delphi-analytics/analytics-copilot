@@ -1,0 +1,130 @@
+{
+  "kpi_definitions": [
+    {
+      "name": "ROI",
+      "definition": "Return on Investment",
+      "calculation": "(Revenue - Cost) / Cost * 100",
+      "tables_used": ["combined_sales_final"],
+      "columns": ["row_subtotal", "cost"],
+      "description": "Measures profitability as a percentage of investment"
+    },
+    {
+      "name": "AOV",
+      "definition": "Average Order Value",
+      "calculation": "SUM(row_subtotal) / COUNT(DISTINCT order_id)",
+      "tables_used": ["combined_sales_final"],
+      "columns": ["row_subtotal", "order_id"],
+      "description": "Average revenue per order"
+    },
+    {
+      "name": "conversion_rate",
+      "definition": "Percentage of visitors who make a purchase",
+      "calculation": "(orders / sessions) * 100",
+      "tables_used": ["combined_sales_final"],
+      "description": "E-commerce conversion rate"
+    },
+    {
+      "name": "GMV",
+      "definition": "Gross Merchandise Value",
+      "calculation": "SUM(row_subtotal)",
+      "tables_used": ["combined_sales_final"],
+      "columns": ["row_subtotal"],
+      "description": "Total value of merchandise sold"
+    },
+    {
+      "name": "NPS",
+      "definition": "Net Promoter Score",
+      "calculation": "(promoters - detractors) / total_respondents * 100",
+      "description": "Customer loyalty metric based on survey responses"
+    },
+    {
+      "name": "CAC",
+      "definition": "Customer Acquisition Cost",
+      "calculation": "total_marketing_spend / new_customers",
+      "description": "Cost to acquire a new customer"
+    }
+  ],
+  "ambiguous_keywords": [
+    {
+      "keyword": "ROI",
+      "meanings": [
+        "Return on Investment - profitability metric",
+        "Republic of India - country",
+        "Rate of Interest - interest rate on loans"
+      ],
+      "context_clues": ["profit", "investment", "return", "revenue", "cost"]
+    },
+    {
+      "keyword": "NPS",
+      "meanings": [
+        "Net Promoter Score - customer loyalty metric",
+        "Net Profit Share - profit distribution metric"
+      ],
+      "context_clues": ["customer", "satisfaction", "promoter", "loyalty"]
+    },
+    {
+      "keyword": "inventory",
+      "aliases": ["inv_mst", "stock", "warehouse", "items", "products", "sku"],
+      "tables": ["inventory_sales_overview_new", "product_master"],
+      "description": "Product inventory and stock levels"
+    },
+    {
+      "keyword": "sales",
+      "aliases": ["orders", "revenue", "transactions", "purchases"],
+      "tables": ["combined_sales_final", "shopify_orders", "unicomm_sales_final", "zoho_sales_final"],
+      "description": "Sales transactions across platforms"
+    },
+    {
+      "keyword": "products",
+      "aliases": ["SKUs", "items", "merchandise", "catalog", "assortment"],
+      "tables": ["product_master", "product_catlog"],
+      "description": "Product catalog and master data"
+    }
+  ],
+  "business_rules": [
+    "Always use row_subtotal for revenue calculations, never use net_amount",
+    "CLIENT_NAME is always 'Limese' - never group by this column",
+    "Use sales_platform for platform-specific analysis (AJIO, AZORTE, Nykaa, etc.)",
+    "For GMV calculations, use row_subtotal from combined_sales_final",
+    "Date filtering should use date_created or order_date columns",
+    "Unit calculations should use quantity column"
+  ],
+  "industry_context": "Beauty and personal care e-commerce brand in India. Sells across multiple platforms including own website, marketplaces (Nykaa, Amazon, Flipkart), and quick commerce.",
+  "platforms": {
+    "AJIO Online": "Fashion marketplace",
+    "AZORTE Online": "E-commerce platform",
+    "Amazon": "Online marketplace",
+    "Flipkart": "Indian e-commerce marketplace",
+    "Meesho": "Social commerce platform",
+    "Nykaa": "Beauty and fashion platform",
+    "Myntra": "Fashion e-commerce",
+    "Shopify": "Own website platform",
+    "Quick commerce": "Blinkit, Zepto, Swiggy Instamart"
+  },
+  "glossary": [
+    {
+      "term": "D2C",
+      "definition": "Direct to Consumer - selling directly to customers without intermediaries"
+    },
+    {
+      "term": "GMV",
+      "definition": "Gross Merchandise Value - total value of goods sold"
+    },
+    {
+      "term": "AOV",
+      "definition": "Average Order Value - average revenue per order"
+    },
+    {
+      "term": "SKU",
+      "definition": "Stock Keeping Unit - unique identifier for each product"
+    },
+    {
+      "term": "B2B",
+      "definition": "Business to Business - selling to other businesses"
+    },
+    {
+      "term": "Quick Commerce",
+      "definition": "Ultra-fast delivery (10-30 minutes) via apps like Blinkit, Zepto"
+    }
+  ]
+}

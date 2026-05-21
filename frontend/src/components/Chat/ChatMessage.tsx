@@ -23,7 +23,11 @@ export const ChatMessageComponent: React.FC<Props> = ({ message, onFollowUp, onE
           {onEdit && (
             <button
               onClick={() => onEdit(message.id, message.content)}
-              className="p-1.5 text-slate-400 hover:text-blue-500 bg-white rounded-lg shadow-sm border border-slate-200 transition"
+              className={`p-1.5 hover:text-blue-500 rounded-lg shadow-sm border transition ${
+                theme === 'dark'
+                  ? 'text-zinc-400 bg-zinc-800 border-zinc-700'
+                  : 'text-zinc-400 bg-white border-zinc-200'
+              }`}
               title="Edit question"
             >
               <Edit2 size={14} />
@@ -32,7 +36,11 @@ export const ChatMessageComponent: React.FC<Props> = ({ message, onFollowUp, onE
           {onDelete && (
             <button
               onClick={() => onDelete(message.id)}
-              className="p-1.5 text-slate-400 hover:text-red-500 bg-white rounded-lg shadow-sm border border-slate-200 transition"
+              className={`p-1.5 hover:text-red-500 rounded-lg shadow-sm border transition ${
+                theme === 'dark'
+                  ? 'text-zinc-400 bg-zinc-800 border-zinc-700'
+                  : 'text-zinc-400 bg-white border-zinc-200'
+              }`}
               title="Delete question"
             >
               <Trash2 size={14} />
@@ -52,13 +60,13 @@ export const ChatMessageComponent: React.FC<Props> = ({ message, onFollowUp, onE
   return (
     <div className="flex flex-col gap-3 mb-6">
       {/* Agent badge */}
-      <div className="flex items-center gap-2 text-xs text-slate-500">
+      <div className="flex items-center gap-2 text-xs text-zinc-500">
         <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold">
           AI
         </div>
         <span>Limese Copilot</span>
         {message.latency_ms && (
-          <span className="flex items-center gap-1 text-slate-400">
+          <span className="flex items-center gap-1 text-zinc-400">
             <Clock size={11} /> {(message.latency_ms / 1000).toFixed(1)}s
           </span>
         )}
@@ -100,8 +108,14 @@ export const ChatMessageComponent: React.FC<Props> = ({ message, onFollowUp, onE
 
       {/* Main text — $→₹ converted */}
       {displayText && !message.error && (
-        <div className="bg-white border border-slate-200 rounded-2xl rounded-tl-sm px-5 py-4 shadow-sm">
-          <div className="text-sm text-slate-700 leading-relaxed prose prose-sm max-w-none">
+        <div className={`rounded-2xl rounded-tl-sm px-5 py-4 shadow-sm ${
+          theme === 'dark'
+            ? 'bg-zinc-900 border-zinc-800'
+            : 'bg-white border border-zinc-200'
+        }`}>
+          <div className={`text-sm leading-relaxed prose prose-sm max-w-none ${
+            theme === 'dark' ? 'text-zinc-300 prose-invert' : 'text-zinc-700'
+          }`}>
             <ReactMarkdown>{displayText}</ReactMarkdown>
           </div>
         </div>
@@ -152,10 +166,14 @@ export const ChatMessageComponent: React.FC<Props> = ({ message, onFollowUp, onE
 
       {/* SQL toggle */}
       {message.sql && (
-        <div className="border border-slate-200 rounded-xl overflow-hidden">
+        <div className={`border rounded-xl overflow-hidden ${theme === 'dark' ? 'border-zinc-700' : 'border-zinc-200'}`}>
           <button
             onClick={() => setShowSQL(!showSQL)}
-            className="w-full flex items-center justify-between px-4 py-2.5 bg-slate-50 hover:bg-slate-100 text-xs font-medium text-slate-600 transition"
+            className={`w-full flex items-center justify-between px-4 py-2.5 text-xs font-medium transition ${
+              theme === 'dark'
+                ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300'
+                : 'bg-zinc-50 hover:bg-zinc-100 text-zinc-600'
+            }`}
           >
             <div className="flex items-center gap-2">
               <Code size={13} />
@@ -164,7 +182,7 @@ export const ChatMessageComponent: React.FC<Props> = ({ message, onFollowUp, onE
             {showSQL ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </button>
           {showSQL && (
-            <pre className="px-4 py-3 text-xs bg-slate-900 text-green-400 overflow-x-auto whitespace-pre-wrap">
+            <pre className="px-4 py-3 text-xs bg-zinc-900 text-green-400 overflow-x-auto whitespace-pre-wrap">
               {message.sql}
             </pre>
           )}
@@ -174,13 +192,17 @@ export const ChatMessageComponent: React.FC<Props> = ({ message, onFollowUp, onE
       {/* Follow-up questions */}
       {message.follow_up_questions && message.follow_up_questions.length > 0 && (
         <div>
-          <p className="text-xs text-slate-400 mb-2">Suggested follow-ups:</p>
+          <p className={`text-xs mb-2 ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-400'}`}>Suggested follow-ups:</p>
           <div className="flex flex-wrap gap-2">
             {message.follow_up_questions.map((q, i) => (
               <button
                 key={i}
                 onClick={() => onFollowUp(q)}
-                className="text-xs bg-white border border-blue-200 text-blue-600 hover:bg-blue-50 rounded-full px-3 py-1.5 transition"
+                className={`text-xs border rounded-full px-3 py-1.5 transition ${
+                  theme === 'dark'
+                    ? 'bg-zinc-800 border-zinc-700 text-blue-400 hover:bg-zinc-700'
+                    : 'bg-white border-blue-200 text-blue-600 hover:bg-blue-50'
+                }`}
               >
                 {q}
               </button>

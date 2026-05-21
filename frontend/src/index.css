@@ -2,9 +2,69 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
-  -webkit-font-smoothing: antialiased;
+@layer base {
+  :root {
+    /* Light mode colors */
+    --color-background: #fafafa;
+    --color-surface: #ffffff;
+    --color-elevated: #f5f5f5;
+    --color-border: #e5e7eb;
+    --color-text: #1f2937;
+    --color-text-muted: #6b7280;
+  }
+
+  .dark {
+    /* Gray-black dark theme (not blue) */
+    --color-background: #1a1a1a;
+    --color-surface: #242424;
+    --color-elevated: #2e2e2e;
+    --color-border: #3a3a3a;
+    --color-text: #e2e2e2;
+    --color-text-muted: #9ca3af;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    background-color: var(--color-background);
+    color: var(--color-text);
+  }
+
+  /* Custom scrollbar - right edge anchored */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #4b5563 var(--color-background);
+  }
+
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: var(--color-background);
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background-color: #4b5563;
+    border-radius: 4px;
+    border: 2px solid var(--color-background);
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: #6b7280;
+  }
+
+  /* Ensure main scroll container is the viewport */
+  html, body {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  #root {
+    height: 100%;
+    overflow: hidden;
+  }
 }
 
 .prose pre { background: transparent !important; }
