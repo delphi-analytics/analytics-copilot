@@ -27,6 +27,7 @@ export interface ChatSession {
   title: string
   initiatedAt: number
   updatedAt?: number
+  pinned?: boolean
 }
 
 interface ChatStore {
@@ -44,6 +45,8 @@ interface ChatStore {
   loadSession: (id: string) => void
   deleteSession: (id: string) => void
   purgeExpiredSessions: () => void
+  togglePin: (id: string) => void
+  getPinnedSessions: () => ChatSession[]
 
   addUserMessage: (content: string) => void
   addAssistantMessage: (response: QueryResponse, sessionId?: string) => void
@@ -74,6 +77,24 @@ export const useChatStore = create<ChatStore>()(
         sessions: state.sessions.filter(s => s.id !== id),
         activeSessionId: state.activeSessionId === id ? null : state.activeSessionId
       })),
+
+      togglePin: (id) => set((state) => {
+        const newSessions = state.sessions.map(s =>
+          s.id === id ? { ...s, pinned: !s.pinned } : s
+        )
+        // Sort: pinned first, then by date
+        newSessions.sort((a, b) => {
+          if (a.pinned && !b.pinned) return -1
+          if (!a.pinned && b.pinned) return 1
+          return (b.updatedAt || b.initiatedAt) - (a.updatedAt || a.initiatedAt)
+        })
+        return { sessions: newSessions }
+      }),
+
+      getPinnedSessions: () => {
+        const state = useChatStore.getState()
+        return state.sessions.filter(s => s.pinned)
+      },
 
       purgeExpiredSessions: () => set((state) => {
         const now = Date.now()

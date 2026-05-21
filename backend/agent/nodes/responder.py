@@ -13,6 +13,105 @@ from backend.services.minio_conversation import minio_conversation_store
 log = structlog.get_logger(__name__)
 
 
+async def _compose_comparison_response(state: AnalyticsState) -> dict:
+    """
+    Compose a response that merges web search results with internal analytics.
+    Used for comparison questions (e.g., "How does our revenue compare to industry?")
+    """
+    question = state["user_question"]
+    web_results = state.get("web_search_results", {})
+    analytics_results = state.get("analytics_results", {})
+
+    web_summary = web_results.get("summary", "No web search results available.")
+    web_sources = web_results.get("sources", [])
+
+    # Extract analytics data
+    analytics_text = analytics_results.get("text", "")
+    analytics_chart = analytics_results.get("chart")
+    analytics_insights = analytics_results.get("insights", [])
+    analytics_metrics = analytics_results.get("key_metrics", {})
+    analytics_rows = analytics_results.get("row_count", 0)
+
+    # Build a merged response
+    response_text = f"""## 🌍 External Market Context
+
+{web_summary}
+
+"""
+
+    if web_sources:
+        response_text += "**Sources:**\n"
+        for i, source in enumerate(web_sources[:3], 1):
+            response_text += f"{i}. [{source['title']}]({source['url']})\n"
+
+    response_text += """
+
+---
+
+## 📊 Your Internal Data
+
+"""
+
+    if analytics_text:
+        # Add the analytics summary
+        response_text += f"\n{analytics_text}"
+    else:
+        response_text += "Internal data query completed with results shown in the chart."
+
+    if analytics_metrics:
+        response_text += "\n\n**Key Internal Metrics:**\n"
+        for key, value in list(analytics_metrics.items())[:5]:
+            response_text += f"• **{key}**: {value}\n"
+
+    # Generate follow-up questions for comparison
+    follow_ups = [
+        "Drill down into specific segments",
+        "Compare with previous period",
+        "What's driving the difference?"
+    ]
+
+    # Also include analytics follow-ups if available
+    analytics_follow_ups = analytics_results.get("follow_up_questions", [])
+    if analytics_follow_ups:
+        follow_ups.extend(analytics_follow_ups[:2])
+
+    log.info(
+        "responder.comparison_complete",
+        web_sources=len(web_sources),
+        analytics_rows=analytics_rows
+    )
+
+    return {
+        **state,
+        "response_text": response_text,
+        "follow_up_questions": follow_ups[:4],
+        "final_response": {
+            "text": response_text,
+            "chart": analytics_chart,  # Show the internal analytics chart
+            "insights": analytics_insights[:3],
+            "key_metrics": analytics_metrics,
+            "follow_up_questions": follow_ups[:4],
+            "sql": analytics_results.get("sql", ""),
+            "sql_explanation": analytics_results.get("sql_explanation", ""),
+            "row_count": analytics_rows,
+            "viz_type": analytics_results.get("viz_type"),
+            "columns": analytics_results.get("columns", []),
+            "rows": analytics_results.get("rows", [])[:200],
+            "total_latency_ms": analytics_results.get("total_latency_ms", 0),
+            "model_used": analytics_results.get("model_used", ""),
+        }
+    }
+
+
+def _extract_tables_from_sql(sql: str) -> list[str]:
+    """Extract table names from SQL query."""
+    import re
+    # Match FROM and JOIN clauses
+    pattern = r'(?:FROM|JOIN)\s+([a-zA-Z_][a-zA-Z0-9_]*)'
+    tables = re.findall(pattern, sql, re.IGNORECASE)
+    return list(set(tables))
+
+
 def _get_conversational_response(intent_type: str, question: str) -> dict:
     """Generate conversational response for greetings and off-topic questions."""
     if intent_type == "greeting":
@@ -114,6 +213,11 @@ async def compose_response(state: AnalyticsState) -> AnalyticsState:
     sql_explanation = state.get("sql_explanation", "")
     error = state.get("error")
     intent_type = state.get("intent", {}).get("type", "")
+
+    # Check if this is a comparison query (web search + analytics merged)
+    if state.get("is_comparison_query"):
+        log.info("responder.comparison_query")
+        return await _compose_comparison_response(state)
 
     # Check if pre-filter already handled this (greeting, off-topic)
     if state.get("pre_filter_response"):
@@ -271,6 +375,23 @@ RULES:
             log.debug("responder.stored_in_vector_memory", question=state["user_question"][:60])
         except Exception as e:
             log.warning("responder.vector_store_failed", error=str(e))
+
+    # Store Q&A pair in QA Memory for fast retrieval
+    if not state.get("error") and row_count > 0:
+        try:
+            from backend.services.knowledge.business_knowledge import get_qa_memory_service
+            qa_service = get_qa_memory_service()
+            qa_service.store_qa(
+                question=state["user_question"],
+                answer=response_text,
+                sql=state.get("sql_query", ""),
+                tables=_extract_tables_from_sql(sql) if sql else [],
+                columns=query_results.get("columns", []),
+                viz_type=viz_type
+            )
+            log.debug("responder.stored_in_qa_memory", question=state["user_question"][:60])
+        except Exception as e:
+            log.warning("responder.qa_memory_store_failed", error=str(e))
 
     # Store conversation in MinIO for persistent history
     try:

@@ -1,10 +1,57 @@
 import axios from 'axios'
+import { useAuthStore } from '../store/auth'
 
 export const api = axios.create({
   baseURL: '/api/v1',
   timeout: 90000,
   headers: { 'Content-Type': 'application/json' },
+  withCredentials: true, // For refresh token cookie
 })
+
+// Request interceptor: Add access token
+api.interceptors.request.use(
+  (config) => {
+    const { accessToken } = useAuthStore.getState()
+    if (accessToken) {
+      config.headers.Authorization = `Bearer ${accessToken}`
+    }
+    return config
+  },
+  (error) => Promise.reject(error)
+)
+
+// Response interceptor: Handle token refresh
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config
+
+    // If 401 and not already retrying
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true
+
+      try {
+        // Try to refresh token
+        const { authApi } = await import('./auth')
+        const { data } = await authApi.post('/refresh', {}, { withCredentials: true })
+
+        // Update store
+        useAuthStore.getState().setAuth(data.user, data.access_token)
+
+        // Retry original request with new token
+        originalRequest.headers.Authorization = `Bearer ${data.access_token}`
+        return api(originalRequest)
+      } catch (refreshError) {
+        // Refresh failed, clear auth and redirect to login
+        useAuthStore.getState().clearAuth()
+        window.location.href = '/login'
+        return Promise.reject(refreshError)
+      }
+    }
+
+    return Promise.reject(error)
+  }
+)
 
 export interface QueryResponse {
   conversation_id: string
@@ -34,7 +81,6 @@ export const sendQuery = async (
     question,
     datasource_id,
     conversation_id,
-    user_id: 'demo_user',
   })
   return data
 }

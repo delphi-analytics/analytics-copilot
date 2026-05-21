@@ -16,13 +16,17 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.agent.graph import run_analytics_agent
+from backend.auth.dependencies import get_current_user_optional
 from backend.data.connector import upload_csv_as_datasource, get_schema, register_datasource
 from backend.database import get_db
 from backend.models.conversation import Conversation, Message
+from backend.models.user import User
 from backend.services.llm_cache import get_cache as _get_llm_cache
+from backend.services.query_analytics import log_query
 
 router = APIRouter()
 DbDep = Annotated[AsyncSession, Depends(get_db)]
+UserDep = Annotated[User | None, Depends(get_current_user_optional)]
 
 
 # ─── Request / Response models ─────────────────────────────────────────────────
@@ -31,7 +35,6 @@ class QueryRequest(BaseModel):
     question: str
     datasource_id: str = "default"
     conversation_id: str | None = None
-    user_id: str = "anonymous"
 
 
 class QueryResponse(BaseModel):
@@ -56,7 +59,7 @@ class QueryResponse(BaseModel):
 # ─── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.post("/query", response_model=QueryResponse)
-async def query(payload: QueryRequest, db: DbDep) -> QueryResponse:
+async def query(payload: QueryRequest, db: DbDep, current_user: UserDep = None) -> QueryResponse:
     """
     Main chat endpoint. Send a question, get AI-powered chart + insights.
     Includes LLM caching (15-min TTL) — repeat questions return instantly.
@@ -105,6 +108,33 @@ async def query(payload: QueryRequest, db: DbDep) -> QueryResponse:
             error=f"Read-only access: {found_keyword} operation not permitted",
         )
 
+    # ─── DISAMBIGUATION CHECK ─────────────────────────────────────────────────
+    # Check if question contains ambiguous keywords that need clarification
+    from backend.services.disambiguation import check_disambiguation
+    disambiguation_result = await check_disambiguation(payload.question)
+    if disambiguation_result:
+        # Return special response indicating disambiguation is needed
+        return QueryResponse(
+            conversation_id=str(uuid.uuid4()),
+            message_id=str(uuid.uuid4()),
+            text=f"**Clarification Needed:** What do you mean by '{disambiguation_result['keyword']}'?",
+            chart=None,
+            insights=[f"Please select the intended meaning of '{disambiguation_result['keyword']}'"],
+            key_metrics={},
+            follow_up_questions=disambiguation_result.get("options", []),
+            sql="",
+            row_count=0,
+            viz_type=None,
+            columns=[],
+            rows=[],
+            total_latency_ms=0,
+            model_used="",
+            error=f"DISAMBIGUATION_NEEDED:{disambiguation_result['keyword']}:{','.join(disambiguation_result.get('options', []))}",
+        )
+
+    # Get user_id from authenticated user or fall back to anonymous
+    user_id = current_user.id if current_user else "anonymous"
+
     # Check LLM cache first (Canary pattern — 80% latency reduction on repeats)
     cache = _get_llm_cache()
     cached = await cache.get_async(question=payload.question, datasource_id=payload.datasource_id)
@@ -120,7 +150,7 @@ async def query(payload: QueryRequest, db: DbDep) -> QueryResponse:
         if not conversation:
             conversation = Conversation(
                 id=conversation_id or str(uuid.uuid4()),
-                user_id=payload.user_id,
+                user_id=user_id,
                 datasource_id=payload.datasource_id,
                 title=payload.question[:100],
             )
@@ -160,10 +190,32 @@ async def query(payload: QueryRequest, db: DbDep) -> QueryResponse:
         db.add(assistant_msg)
         await db.commit()
 
+        # Log the cached query for analytics
+        try:
+            await log_query(
+                db=db,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                datasource_id=payload.datasource_id,
+                question=payload.question,
+                intent_type="cached",
+                sql_query=cache_fields.get("sql", ""),
+                row_count=cache_fields.get("row_count", 0),
+                viz_type=cache_fields.get("viz_type"),
+                latency_ms=cache_fields.get("total_latency_ms", 0),
+                cache_hit=True,
+                model_used=cache_fields.get("model_used", "cache")
+            )
+        except Exception:
+            pass
+
+        # Role-based filtering for cached responses
+        can_view_sql = current_user.can_view_sql() if current_user else True
+
         return QueryResponse(
             conversation_id=conversation_id,
             message_id=assistant_msg.id,
-            **cache_fields,
+            **{k: v for k, v in cache_fields.items() if k not in ("sql", "sql_explanation") or can_view_sql},
         )
 
     # Get or create conversation
@@ -177,7 +229,7 @@ async def query(payload: QueryRequest, db: DbDep) -> QueryResponse:
     if not conversation:
         conversation = Conversation(
             id=str(uuid.uuid4()),
-            user_id=payload.user_id,
+            user_id=user_id,
             datasource_id=payload.datasource_id,
             title=payload.question[:100],
         )
@@ -216,7 +268,7 @@ async def query(payload: QueryRequest, db: DbDep) -> QueryResponse:
             session_id=conversation_id,
             conversation_id=conversation_id,
             conversation_history=conversation_history,
-            user_id=payload.user_id,
+            user_id=user_id,
         )
     except PermissionError as exc:
         # Read-only access violation - user-friendly error
@@ -241,6 +293,27 @@ async def query(payload: QueryRequest, db: DbDep) -> QueryResponse:
             "total_latency_ms": 0,
             "model_used": "",
         }
+
+    # Log query for analytics (async, don't fail request on logging errors)
+    try:
+        intent_type = agent_result.get("intent", {}).get("type", "unknown") if isinstance(agent_result.get("intent"), dict) else "unknown"
+        await log_query(
+            db=db,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            datasource_id=payload.datasource_id,
+            question=payload.question,
+            intent_type=intent_type,
+            sql_query=agent_result.get("sql", ""),
+            row_count=agent_result.get("row_count", 0),
+            viz_type=agent_result.get("viz_type"),
+            latency_ms=agent_result.get("total_latency_ms", 0),
+            cache_hit=False,
+            model_used=agent_result.get("model_used", ""),
+            error=agent_result.get("error")
+        )
+    except Exception:
+        pass
 
     # Save assistant message
     assistant_msg = Message(
@@ -286,6 +359,10 @@ async def query(payload: QueryRequest, db: DbDep) -> QueryResponse:
             },
         )
 
+    # Role-based filtering: hide SQL for non-business_analyst users
+    can_view_sql = current_user.can_view_sql() if current_user else True  # Anonymous users can see SQL for now
+    can_export = current_user.can_export_data() if current_user else True
+
     return QueryResponse(
         conversation_id=conversation_id,
         message_id=assistant_msg.id,
@@ -294,8 +371,8 @@ async def query(payload: QueryRequest, db: DbDep) -> QueryResponse:
         insights=agent_result.get("insights", []),
         key_metrics=agent_result.get("key_metrics", {}),
         follow_up_questions=agent_result.get("follow_up_questions", []),
-        sql=agent_result.get("sql", ""),
-        sql_explanation=agent_result.get("sql_explanation", ""),
+        sql=agent_result.get("sql", "") if can_view_sql else "",
+        sql_explanation=agent_result.get("sql_explanation", "") if can_view_sql else "",
         row_count=agent_result.get("row_count", 0),
         viz_type=agent_result.get("viz_type"),
         columns=agent_result.get("columns", []),
@@ -310,7 +387,7 @@ async def query(payload: QueryRequest, db: DbDep) -> QueryResponse:
 async def upload_file(
     file: UploadFile = File(...),
     datasource_name: str = Form("uploaded_data"),
-    user_id: str = Form("anonymous"),
+    current_user: UserDep = None,
 ) -> dict:
     """Upload a CSV or Excel file for analysis."""
     allowed_types = {"text/csv", "application/vnd.ms-excel",
@@ -374,3 +451,41 @@ async def register_ds(payload: dict) -> dict:
     register_datasource(ds_id, payload["type"], payload.get("config", {}))
     schema = await get_schema(ds_id)
     return {"datasource_id": ds_id, "schema": schema, "status": "registered"}
+
+
+@router.post("/disambiguate")
+async def disambiguate_question(
+    question: str,
+    selected_meaning: str,
+    keyword: str,
+    db: DbDep = None,
+    current_user: UserDep = None
+) -> QueryResponse:
+    """
+    Re-run a question after user has selected the meaning of an ambiguous keyword.
+
+    Example:
+        User asks: "What is our ROI?"
+        System returns disambiguation options for ROI
+        User selects: "Return on Investment"
+        Frontend calls this endpoint with the selected meaning
+    """
+    from backend.services.disambiguation import resolve_disambiguation
+
+    # Inject the selected meaning into the question
+    resolved_question = resolve_disambiguation(question, keyword, selected_meaning)
+
+    # Run the query with the resolved question
+    user_id = current_user.id if current_user else "anonymous"
+
+    # Create a simple payload for the query function
+    class SimplePayload:
+        def __init__(self, q: str, ds: str, conv_id: str | None = None):
+            self.question = q
+            self.datasource_id = ds
+            self.conversation_id = conv_id
+
+    payload = SimplePayload(resolved_question, "default", None)
+
+    return await query(payload, db, current_user)
+
