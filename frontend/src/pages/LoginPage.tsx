@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { LogIn, Mail, Lock, AlertCircle } from 'lucide-react'
-import { login, createDemoUser } from '../api/auth'
+import { LogIn, Mail, Lock, AlertCircle, CheckCircle } from 'lucide-react'
+import { login } from '../api/auth'
 import { useAuthStore } from '../store/auth'
 
 export default function LoginPage() {
@@ -11,12 +11,13 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [successMessage, setSuccessMessage] = useState('')
   const [loading, setLoading] = useState(false)
-  const [showDemo, setShowDemo] = useState(false)
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    setSuccessMessage('')
     setLoading(true)
 
     try {
@@ -35,28 +36,20 @@ export default function LoginPage() {
     }
   }
 
-  const handleCreateDemo = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError('')
-    setLoading(true)
+  const handleForgotPassword = () => {
+    // Open email client with pre-filled subject
+    const subject = encodeURIComponent('Password Reset Request - Analytics Copilot')
+    const body = encodeURIComponent(`Hello,
 
-    try {
-      const role = (document.getElementById('demo-role') as HTMLSelectElement)?.value || 'business_analyst'
-      await createDemoUser(email, password, 'Demo User', role)
-      // Now login with the created user
-      const response = await login(email, password)
-      setAuth(response.user, response.access_token)
-      navigate('/')
-    } catch (err: unknown) {
-      if (err && typeof err === 'object' && 'response' in err) {
-        const axiosError = err as { response?: { data?: { detail?: string } } }
-        setError(axiosError.response?.data?.detail || 'Failed to create demo user.')
-      } else {
-        setError('An unexpected error occurred.')
-      }
-    } finally {
-      setLoading(false)
-    }
+I would like to reset my password for the Analytics Copilot.
+
+Email: ${email}
+
+Thank you.`)
+    window.open(`mailto:ecom@delphianalytics.in?subject=${subject}&body=${body}`, '_blank')
+
+    setSuccessMessage('An email draft has been created. Please send it to complete your password reset request.')
+    setTimeout(() => setSuccessMessage(''), 5000)
   }
 
   return (
@@ -79,6 +72,13 @@ export default function LoginPage() {
             <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-start gap-3">
               <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
               <p className="text-sm text-red-800 dark:text-red-200">{error}</p>
+            </div>
+          )}
+
+          {successMessage && (
+            <div className="mb-6 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg flex items-start gap-3">
+              <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-green-800 dark:text-green-200">{successMessage}</p>
             </div>
           )}
 
@@ -139,40 +139,18 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <div className="mt-6 pt-6 border-t border-slate-200 dark:border-zinc-700">
+          <div className="mt-6 pt-6 border-t border-slate-200 dark:border-zinc-700 space-y-3">
             <button
               type="button"
-              onClick={() => setShowDemo(!showDemo)}
+              onClick={handleForgotPassword}
               className="text-sm text-slate-600 dark:text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
             >
-              {showDemo ? 'Hide demo user creation' : '+ Create a demo user (development)'}
+              Forgot Password?
             </button>
 
-            {showDemo && (
-              <form onSubmit={handleCreateDemo} className="mt-4 space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-zinc-300 mb-2">
-                    Role
-                  </label>
-                  <select
-                    id="demo-role"
-                    className="w-full px-4 py-3 bg-slate-50 dark:bg-zinc-700/50 border border-slate-200 dark:border-zinc-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-slate-900 dark:text-white"
-                  >
-                    <option value="business_analyst">Business Analyst (full access)</option>
-                    <option value="non_tech_user">Non-Tech User (no SQL)</option>
-                    <option value="team_member">Team Member (read-only)</option>
-                    <option value="admin">Admin (all permissions)</option>
-                  </select>
-                </div>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full py-2 px-4 bg-slate-100 dark:bg-zinc-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-zinc-200 font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Create Demo User & Sign In
-                </button>
-              </form>
-            )}
+            <div className={`text-xs text-slate-500 dark:text-zinc-500 pt-2`}>
+              <p>Need help? Contact <a href="mailto:ecom@delphianalytics.in" className="text-blue-600 hover:underline">ecom@delphianalytics.in</a></p>
+            </div>
           </div>
         </div>
 

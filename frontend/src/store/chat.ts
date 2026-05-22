@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { QueryResponse } from '../api/client'
+import { useAuthStore } from './auth'
 
 export interface ChatMessage {
   id: string
@@ -31,6 +32,7 @@ export interface ChatSession {
 }
 
 interface ChatStore {
+  userId: string | null
   sessions: ChatSession[]
   activeSessionId: string | null
   datasourceId: string
@@ -40,6 +42,7 @@ interface ChatStore {
   setDatasourceId: (id: string) => void
   setUploadedFile: (name: string | null) => void
   setLoading: (loading: boolean) => void
+  clearForNewUser: (userId: string) => void
 
   startNewSession: () => void
   loadSession: (id: string) => void
@@ -58,16 +61,23 @@ const EXPIRY_TIME_MS = 10 * 60 * 1000 // 10 minutes
 
 export const useChatStore = create<ChatStore>()(
   persist(
-    (set) => ({
+    (set, get) => ({
+      userId: null,
       sessions: [],
       activeSessionId: null,
-      datasourceId: 'limese',   // Default to Limese ClickHouse (real data)
+      datasourceId: 'limese',
       isLoading: false,
       uploadedFile: null,
 
       setDatasourceId: (id) => set({ datasourceId: id }),
       setUploadedFile: (name) => set({ uploadedFile: name }),
       setLoading: (loading) => set({ isLoading: loading }),
+
+      clearForNewUser: (userId) => set({
+        userId,
+        sessions: [],
+        activeSessionId: null,
+      }),
 
       startNewSession: () => set({ activeSessionId: null }),
 
@@ -82,7 +92,6 @@ export const useChatStore = create<ChatStore>()(
         const newSessions = state.sessions.map(s =>
           s.id === id ? { ...s, pinned: !s.pinned } : s
         )
-        // Sort: pinned first, then by date
         newSessions.sort((a, b) => {
           if (a.pinned && !b.pinned) return -1
           if (!a.pinned && b.pinned) return 1
@@ -92,7 +101,7 @@ export const useChatStore = create<ChatStore>()(
       }),
 
       getPinnedSessions: () => {
-        const state = useChatStore.getState()
+        const state = get()
         return state.sessions.filter(s => s.pinned)
       },
 
@@ -140,7 +149,7 @@ export const useChatStore = create<ChatStore>()(
       addAssistantMessage: (response, sessionId) => set((state) => {
         const targetId = sessionId || state.activeSessionId
         if (!targetId) return state
- 
+
         const newSessions = [...state.sessions]
         const index = newSessions.findIndex(s => s.id === targetId)
         if (index === -1) return state
@@ -193,13 +202,12 @@ export const useChatStore = create<ChatStore>()(
 
         const currentSession = newSessions[sessionIndex]
         const messageIndex = currentSession.messages.findIndex(m => m.id === messageId)
-        
+
         if (messageIndex === -1) return state
 
-        // Delete the user message and the subsequent assistant message (if it exists)
         let numToDelete = 1
-        if (currentSession.messages[messageIndex].role === 'user' && 
-            messageIndex + 1 < currentSession.messages.length && 
+        if (currentSession.messages[messageIndex].role === 'user' &&
+            messageIndex + 1 < currentSession.messages.length &&
             currentSession.messages[messageIndex + 1].role === 'assistant') {
           numToDelete = 2
         }
@@ -212,13 +220,27 @@ export const useChatStore = create<ChatStore>()(
       })
     }),
     {
-      name: 'analytics-copilot-chat-storage', // name of item in localStorage
+      name: 'analytics-copilot-chat-storage',
       partialize: (state) => ({
+        userId: state.userId,
         sessions: state.sessions,
         activeSessionId: state.activeSessionId,
         datasourceId: state.datasourceId,
         uploadedFile: state.uploadedFile,
-      }), // only persist these fields
+      }),
     }
   )
 )
+
+// Subscribe to auth changes and clear chat when user changes
+useAuthStore.subscribe((state, prevState) => {
+  const currentUserId = state.user?.id
+  const previousUserId = prevState.user?.id
+
+  if (currentUserId && currentUserId !== previousUserId) {
+    useChatStore.getState().clearForNewUser(currentUserId)
+  } else if (!currentUserId && previousUserId) {
+    // User logged out, clear chat
+    useChatStore.getState().clearForNewUser('')
+  }
+})

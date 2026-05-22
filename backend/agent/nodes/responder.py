@@ -213,11 +213,7 @@ async def compose_response(state: AnalyticsState) -> AnalyticsState:
     sql_explanation = state.get("sql_explanation", "")
     error = state.get("error")
     intent_type = state.get("intent", {}).get("type", "")
-
-    # Check if this is a comparison query (web search + analytics merged)
-    if state.get("is_comparison_query"):
-        log.info("responder.comparison_query")
-        return await _compose_comparison_response(state)
+    intent_confidence = state.get("intent", {}).get("confidence", 0.0)
 
     # Check if pre-filter already handled this (greeting, off-topic)
     if state.get("pre_filter_response"):
@@ -240,6 +236,11 @@ async def compose_response(state: AnalyticsState) -> AnalyticsState:
             "follow_up_questions": greeting_response.get("follow_up_questions", []),
             "final_response": greeting_response,
         }
+
+    # Check if this is a comparison query (web search + analytics merged)
+    if state.get("is_comparison_query"):
+        log.info("responder.comparison_query")
+        return await _compose_comparison_response(state)
 
     # Check if this is an insight follow-up response
     if state.get("insight_followup_response"):
