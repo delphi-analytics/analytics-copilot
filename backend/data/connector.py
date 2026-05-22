@@ -247,18 +247,41 @@ async def _sqlite_schema(config: dict) -> dict:
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
             tables = []
             for (table_name,) in cursor.fetchall():
-                cursor.execute(f"PRAGMA table_info({table_name})")
+                cursor.execute(f"PRAGMA table_info(`{table_name}`)")
+                columns_raw = cursor.fetchall()
+
+                cursor.execute(f"SELECT COUNT(*) FROM `{table_name}`")
+                row_count = cursor.fetchone()[0]
+
+                # Calculate null counts for all columns
+                null_counts = {}
+                if row_count > 0 and columns_raw:
+                    select_parts = [f"SUM(CASE WHEN `{row[1]}` IS NULL THEN 1 ELSE 0 END)" for row in columns_raw]
+                    nulls_sql = f"SELECT {', '.join(select_parts)} FROM `{table_name}`"
+                    try:
+                        cursor.execute(nulls_sql)
+                        row_vals = cursor.fetchone()
+                        if row_vals:
+                            for col_meta, val in zip(columns_raw, row_vals):
+                                null_counts[col_meta[1]] = int(val or 0)
+                    except Exception as e:
+                        log.warning("schema.sqlite_null_count_failed", table=table_name, error=str(e))
+
                 columns = [
-                    {"name": row[1], "type": row[2], "nullable": not row[3], "primary_key": bool(row[5])}
-                    for row in cursor.fetchall()
+                    {
+                        "name": row[1],
+                        "type": row[2],
+                        "nullable": not row[3],
+                        "primary_key": bool(row[5]),
+                        "null_count": null_counts.get(row[1], 0)
+                    }
+                    for row in columns_raw
                 ]
+
                 # Get sample data
-                cursor.execute(f"SELECT * FROM {table_name} LIMIT 3")
+                cursor.execute(f"SELECT * FROM `{table_name}` LIMIT 3")
                 sample_cols = [desc[0] for desc in (cursor.description or [])]
                 sample_rows = [dict(zip(sample_cols, r)) for r in cursor.fetchall()]
-
-                cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
-                row_count = cursor.fetchone()[0]
 
                 tables.append({
                     "name": table_name,
@@ -296,9 +319,30 @@ async def _postgresql_schema(config: dict) -> dict:
                 WHERE table_name = $1 AND table_schema = 'public'
                 ORDER BY ordinal_position
             """, table_name)
-            columns = [{"name": c["column_name"], "type": c["data_type"], "nullable": c["is_nullable"] == "YES"}
-                       for c in cols]
             count = await conn.fetchval(f'SELECT COUNT(*) FROM "{table_name}"')
+
+            # Calculate null counts for all columns
+            null_counts = {}
+            if count > 0 and cols:
+                select_parts = [f'SUM(CASE WHEN "{c["column_name"]}" IS NULL THEN 1 ELSE 0 END)' for c in cols]
+                nulls_sql = f'SELECT {", ".join(select_parts)} FROM "{table_name}"'
+                try:
+                    row_vals = await conn.fetchrow(nulls_sql)
+                    if row_vals:
+                        for c, val in zip(cols, row_vals):
+                            null_counts[c["column_name"]] = int(val or 0)
+                except Exception as e:
+                    log.warning("schema.postgresql_null_count_failed", table=table_name, error=str(e))
+
+            columns = [
+                {
+                    "name": c["column_name"],
+                    "type": c["data_type"],
+                    "nullable": c["is_nullable"] == "YES",
+                    "null_count": null_counts.get(c["column_name"], 0)
+                }
+                for c in cols
+            ]
             tables.append({"name": table_name, "columns": columns, "row_count": count})
         await conn.close()
         return {"tables": tables}
@@ -326,8 +370,32 @@ async def _csv_schema(config: dict) -> dict:
         conn = duckdb.connect(":memory:")
         conn.execute(f"CREATE TABLE {table_name} AS SELECT * FROM read_csv_auto('{file_path}')")
         result = conn.execute(f"DESCRIBE {table_name}").fetchall()
-        columns = [{"name": r[0], "type": r[1]} for r in result]
+        columns_raw = [{"name": r[0], "type": r[1]} for r in result]
         count = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+
+        # Calculate null counts for all columns
+        null_counts = {}
+        if count > 0 and columns_raw:
+            select_parts = [f'SUM(CASE WHEN "{col["name"]}" IS NULL THEN 1 ELSE 0 END)' for col in columns_raw]
+            nulls_sql = f'SELECT {", ".join(select_parts)} FROM {table_name}'
+            try:
+                row_vals = conn.execute(nulls_sql).fetchone()
+                if row_vals:
+                    for col, val in zip(columns_raw, row_vals):
+                        null_counts[col["name"]] = int(val or 0)
+            except Exception as e:
+                log.warning("schema.csv_null_count_failed", table=table_name, error=str(e))
+
+        columns = [
+            {
+                "name": col["name"],
+                "type": col["type"],
+                "nullable": True,
+                "null_count": null_counts.get(col["name"], 0)
+            }
+            for col in columns_raw
+        ]
+
         return {"tables": [{"name": table_name, "columns": columns, "row_count": count}]}
     except Exception as exc:
         return {"tables": [], "error": str(exc)}
@@ -345,3 +413,26 @@ async def upload_csv_as_datasource(file_bytes: bytes, filename: str, ds_id: str)
     register_datasource(ds_id, "csv", {"file_path": str(file_path), "table_name": "data"})
     schema = await get_schema(ds_id)
     return {"datasource_id": ds_id, "file_path": str(file_path), "schema": schema}
+
+
+def get_registered_datasources() -> list[dict]:
+    """Get list of registered datasources with passwords/secrets masked."""
+    results = []
+    if not _datasources:
+        _datasources["default"] = {"type": "sqlite", "config": {"path": "./demo.db"}}
+    for ds_id, ds in _datasources.items():
+        # mask credentials
+        safe_config = {}
+        if "config" in ds:
+            for k, v in ds["config"].items():
+                if k in ("password", "secret", "token", "password_hash"):
+                    safe_config[k] = "******"
+                else:
+                    safe_config[k] = v
+        results.append({
+            "id": ds_id,
+            "type": ds["type"],
+            "config": safe_config
+        })
+    return results
+

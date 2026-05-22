@@ -3,7 +3,7 @@ import { BarChart2, Database, Clock, Plus, Trash2, MessageSquare, Code, LayoutDa
 import { useChatStore, ChatSession } from '../store/chat'
 import { useThemeStore } from '../store/theme'
 import { useAuthStore } from '../store/auth'
-import { sendQuery } from '../api/client'
+import { sendQuery, getDatasources, getSchema } from '../api/client'
 import { ChatMessageComponent } from '../components/Chat/ChatMessage'
 import { ChatInput } from '../components/Chat/ChatInput'
 import DisambiguationModal from '../components/DisambiguationModal'
@@ -22,11 +22,45 @@ export const CopilotPage: React.FC = () => {
   const { theme } = useThemeStore()
   const { user } = useAuthStore()
 
-  // Permanently reset to ClickHouse datasource — clear any stale uploaded file from localStorage
+  const [datasources, setDatasources] = useState<any[]>([])
+  const [schema, setSchema] = useState<any>(null)
+  const [schemaLoading, setSchemaLoading] = useState(false)
+
+  // Load registered datasources on mount
   useEffect(() => {
-    setDatasourceId('limese')
+    const fetchDatasources = async () => {
+      try {
+        const list = await getDatasources()
+        setDatasources(list)
+        // If the persisted datasource is not in the list, fallback to first available
+        if (list.length > 0 && !list.some((ds: { id: string }) => ds.id === datasourceId)) {
+          setDatasourceId(list[0].id)
+        }
+      } catch (err) {
+        console.error("Failed to fetch datasources:", err)
+      }
+    }
+    fetchDatasources()
     setUploadedFile(null)
   }, [])
+
+  // Load schema whenever active datasource changes
+  useEffect(() => {
+    if (!datasourceId) return
+    const fetchSchema = async () => {
+      setSchemaLoading(true)
+      try {
+        const data = await getSchema(datasourceId)
+        setSchema(data)
+      } catch (err) {
+        console.error(`Failed to fetch schema for ${datasourceId}:`, err)
+        setSchema(null)
+      } finally {
+        setSchemaLoading(false)
+      }
+    }
+    fetchSchema()
+  }, [datasourceId])
 
   const activeSession = sessions.find(s => s.id === activeSessionId)
   const messages = activeSession?.messages || []
@@ -123,7 +157,7 @@ export const CopilotPage: React.FC = () => {
           // Remove the assistant message with disambiguation request
           const session = useChatStore.getState().sessions.find(s => s.id === targetSessionId)
           if (session?.messages.length) {
-            useChatStore.getState().deleteMessage(targetSessionId!, session.messages[session.messages.length - 1].id)
+            useChatStore.getState().deleteMessage(session.messages[session.messages.length - 1].id)
           }
 
           setDisambiguation({ keyword, options, originalQuestion: question })
@@ -210,7 +244,7 @@ export const CopilotPage: React.FC = () => {
                 Data Visualization Copilot
               </h1>
               <p className={`text-xs ${theme === 'dark' ? 'text-zinc-400' : 'text-slate-400'}`}>
-                AI-Powered Analytics · Limese
+                AI-Powered Analytics · {datasourceId === 'default' ? 'SQLite Demo' : datasourceId === 'limese' ? 'Limese ClickHouse' : datasourceId}
               </p>
             </div>
           </div>
@@ -244,45 +278,57 @@ export const CopilotPage: React.FC = () => {
               theme === 'dark' ? 'bg-zinc-800 text-zinc-300' : 'bg-slate-100 text-slate-600'
             }`}>
               <Database size={12} className="text-green-500" />
-              <span>Limese Analytics · ClickHouse</span>
+              {datasources.length === 0 ? (
+                <span>Loading...</span>
+              ) : (
+                <select
+                  value={datasourceId}
+                  onChange={(e) => {
+                    setDatasourceId(e.target.value)
+                    startNewSession()
+                  }}
+                  className="bg-transparent border-none outline-none font-medium cursor-pointer"
+                >
+                  {datasources.map((ds) => (
+                    <option key={ds.id} value={ds.id} className={theme === 'dark' ? 'bg-zinc-950 text-zinc-300' : 'bg-white text-slate-600'}>
+                      {ds.id === 'default' ? 'SQLite Demo' : ds.id === 'limese' ? 'Limese ClickHouse' : `${ds.id} (${ds.type})`}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
           </div>
         </header>
 
         {/* Messages - Fixed scrollbar */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-8 py-6 max-w-4xl w-full mx-auto">
-          {messages.length === 0 ? (
-            <WelcomeScreen onQuestionClick={handleSend} theme={theme} />
-          ) : (
-            <>
-              {messages.map((msg) => (
-                <ChatMessageComponent
-                  key={msg.id}
-                  message={msg}
-                  onFollowUp={handleSend}
-                  onEdit={(id, content) => setChatInputValue(content)}
-                  onDelete={(id) => setMessageToDelete(id)}
-                  theme={theme}
-                />
-              ))}
-              {isLoading && <ThinkingIndicator seconds={elapsedSeconds} theme={theme} />}
-            </>
-          )}
-          <div ref={bottomRef} />
+        <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-8 py-6 w-full">
+          <div className="max-w-4xl w-full mx-auto">
+            {messages.length === 0 ? (
+              <WelcomeScreen
+                onQuestionClick={handleSend}
+                theme={theme}
+                schema={schema}
+                datasourceId={datasourceId}
+                loading={schemaLoading}
+              />
+            ) : (
+              <>
+                {messages.map((msg) => (
+                  <ChatMessageComponent
+                    key={msg.id}
+                    message={msg}
+                    onFollowUp={handleSend}
+                    onEdit={(id, content) => setChatInputValue(content)}
+                    onDelete={(id) => setMessageToDelete(id)}
+                    theme={theme}
+                  />
+                ))}
+                {isLoading && <ThinkingIndicator seconds={elapsedSeconds} theme={theme} />}
+              </>
+            )}
+            <div ref={bottomRef} />
+          </div>
         </div>
-
-        {/* Transparency Panel - Shows real-time progress */}
-        {showTransparency && transparencySteps.length > 0 && (
-          <TransparencyPanel
-            steps={transparencySteps}
-            isComplete={!isLoading && !isStreaming}
-            sql={transparencySteps.find(s => s.data?.sql)?.data?.sql as string}
-            tables={transparencySteps
-              .find(s => s.step === 'discover_schema' || s.step === 'generate_sql')
-              ?.data?.tables as string[] || []}
-            columns={transparencySteps.find(s => s.data?.columns)?.data?.columns as string[]}
-          />
-        )}
 
         {/* Disambiguation Modal */}
         {disambiguation && (
@@ -298,7 +344,7 @@ export const CopilotPage: React.FC = () => {
 
         {/* Input */}
         <div className={`border-t ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-slate-200'}`}>
-          <div className="max-w-4xl mx-auto">
+          <div className="max-w-4xl mx-auto flex flex-col">
             <ChatInput
               value={chatInputValue}
               onChange={setChatInputValue}
@@ -306,6 +352,19 @@ export const CopilotPage: React.FC = () => {
               isLoading={isLoading}
               theme={theme}
             />
+            {showTransparency && transparencySteps.length > 0 && (
+              <div className="px-4 pb-4">
+                <TransparencyPanel
+                  steps={transparencySteps}
+                  isComplete={!isLoading && !isStreaming}
+                  sql={transparencySteps.find(s => s.data?.sql)?.data?.sql as string}
+                  tables={transparencySteps
+                    .find(s => s.step === 'discover_schema' || s.step === 'generate_sql')
+                    ?.data?.tables as string[] || []}
+                  columns={transparencySteps.find(s => s.data?.columns)?.data?.columns as string[]}
+                />
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -389,41 +448,206 @@ export const CopilotPage: React.FC = () => {
   )
 }
 
-const WelcomeScreen: React.FC<{ onQuestionClick: (q: string) => void; theme: string }> = ({ onQuestionClick, theme }) => (
-  <div className="flex flex-col items-center justify-center min-h-96 text-center py-12">
-    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center mb-6 shadow-lg">
-      <BarChart2 size={32} className="text-white" />
+interface ColumnSchema {
+  name: string
+  type: string
+  nullable: boolean
+  null_count: number
+  primary_key?: boolean
+}
+
+interface TableSchema {
+  name: string
+  row_count: number
+  columns: ColumnSchema[]
+  sample_data?: any[]
+}
+
+const generateSuggestedQueries = (tables: TableSchema[]): { q: string; icon: string }[] => {
+  if (!tables || tables.length === 0) {
+    return [
+      { q: "Show summary of all tables", icon: "📊" },
+      { q: "List all schemas in this database", icon: "🔍" },
+      { q: "Show row counts for all tables", icon: "🔢" },
+      { q: "Describe the database details", icon: "📋" }
+    ]
+  }
+
+  const suggestions: { q: string; icon: string }[] = []
+  
+  // Sort tables by row count descending
+  const sortedTables = [...tables].sort((a, b) => b.row_count - a.row_count)
+  const primaryTable = sortedTables[0]
+  
+  // Find a category-like column in primary table (string column that isn't ID)
+  const categoryCol = primaryTable.columns.find((c: ColumnSchema) => {
+    const n = c.name.toLowerCase()
+    const t = c.type.toLowerCase()
+    return (t.includes('str') || t.includes('char') || t.includes('text')) && !n.includes('id') && !n.includes('url') && !n.includes('image')
+  })
+  
+  // Find a numeric column in primary table
+  const numericCol = primaryTable.columns.find((c: ColumnSchema) => {
+    const n = c.name.toLowerCase()
+    const t = c.type.toLowerCase()
+    return n !== 'id' && (t.includes('int') || t.includes('dec') || t.includes('float') || t.includes('double') || t.includes('num') || t.includes('real'))
+  })
+
+  // Find a date column in primary table
+  const dateCol = primaryTable.columns.find((c: ColumnSchema) => {
+    const n = c.name.toLowerCase()
+    const t = c.type.toLowerCase()
+    return n.includes('date') || n.includes('time') || n.includes('created') || t.includes('date') || t.includes('time')
+  })
+
+  // Question 1: Basic row count or listing
+  suggestions.push({
+    q: `Show total number of records in ${primaryTable.name}`,
+    icon: "🔢"
+  })
+
+  // Question 2: Grouping by category
+  if (categoryCol) {
+    suggestions.push({
+      q: `Show breakdown of ${primaryTable.name} by ${categoryCol.name}`,
+      icon: "📊"
+    })
+  }
+
+  // Question 3: Numeric sum/average
+  if (numericCol && categoryCol) {
+    suggestions.push({
+      q: `What is the total ${numericCol.name} grouped by ${categoryCol.name}?`,
+      icon: "💰"
+    })
+  } else if (numericCol) {
+    suggestions.push({
+      q: `What is the average ${numericCol.name} in ${primaryTable.name}?`,
+      icon: "📈"
+    })
+  }
+
+  // Question 4: Date trend
+  if (dateCol && numericCol) {
+    suggestions.push({
+      q: `What is the monthly trend of ${numericCol.name} over time?`,
+      icon: "📈"
+    })
+  } else if (dateCol) {
+    suggestions.push({
+      q: `How many ${primaryTable.name} were created by day/month?`,
+      icon: "📅"
+    })
+  }
+
+  // Question 5: Top 10 listing
+  if (numericCol) {
+    suggestions.push({
+      q: `Show the top 10 ${primaryTable.name} based on ${numericCol.name}`,
+      icon: "🏆"
+    })
+  }
+
+  // Question 6: A query on the second table if available
+  if (sortedTables.length > 1) {
+    const secTable = sortedTables[1]
+    const secNumericCol = secTable.columns.find((c: ColumnSchema) => 
+      c.name.toLowerCase() !== 'id' && 
+      (c.type.toLowerCase().includes('int') || c.type.toLowerCase().includes('dec') || c.type.toLowerCase().includes('float') || c.type.toLowerCase().includes('num'))
+    )
+    if (secNumericCol) {
+      suggestions.push({
+        q: `Analyze ${secTable.name} by ${secNumericCol.name}`,
+        icon: "⚖️"
+      })
+    } else {
+      suggestions.push({
+        q: `Show a preview of data from ${secTable.name}`,
+        icon: "🔍"
+      })
+    }
+  }
+
+  // Ensure we have at least 4 suggestions, if not fallback
+  while (suggestions.length < 4 && tables.length > 0) {
+    const randomTable = tables[Math.floor(Math.random() * tables.length)]
+    suggestions.push({
+      q: `Describe the schema and columns of ${randomTable.name}`,
+      icon: "📋"
+    })
+  }
+
+  return suggestions.slice(0, 6)
+}
+
+interface WelcomeScreenProps {
+  onQuestionClick: (q: string) => void
+  theme: string
+  schema: { tables: any[] } | null
+  datasourceId: string
+  loading: boolean
+}
+
+const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onQuestionClick, theme, schema, datasourceId, loading }) => {
+  const tables = schema?.tables || []
+
+  // Generate suggested queries using our helper
+  const suggestions = React.useMemo(() => {
+    return generateSuggestedQueries(tables)
+  }, [tables])
+
+  const dbName = datasourceId === 'default' ? 'SQLite Demo' : datasourceId === 'limese' ? 'Limese ClickHouse' : datasourceId
+  const dbType = datasourceId === 'limese' ? 'ClickHouse' : 'SQLite/Local'
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-96 text-center py-12 animate-in fade-in duration-300">
+        <div className="w-12 h-12 rounded-full border-4 border-blue-500 border-t-transparent animate-spin mb-4" />
+        <p className={`text-sm ${theme === 'dark' ? 'text-zinc-400' : 'text-slate-500'}`}>
+          Scanning schema of {dbName}...
+        </p>
+      </div>
+    )
+  }
+
+  const totalRows = tables.reduce((acc, t) => acc + (t.row_count || 0), 0)
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-96 text-center py-12 animate-in fade-in duration-300">
+      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center mb-6 shadow-lg">
+        <BarChart2 size={32} className="text-white" />
+      </div>
+      <h2 className={`text-2xl font-bold mb-2 ${theme === 'dark' ? 'text-zinc-100' : 'text-slate-800'}`}>
+        {dbName} Data Copilot
+      </h2>
+      <p className={`mb-2 max-w-md text-sm ${theme === 'dark' ? 'text-zinc-400' : 'text-slate-500'}`}>
+        {tables.length > 0 
+          ? `Ask questions about your database tables (${tables.map(t => t.name).slice(0, 3).join(', ')}${tables.length > 3 ? '...' : ''}) in plain English.`
+          : 'Ask questions about your database schema in plain English.'
+        }
+      </p>
+      <p className={`text-xs mb-8 ${theme === 'dark' ? 'text-zinc-500' : 'text-slate-400'}`}>
+        Connected to {dbType} · {tables.length} tables · {totalRows.toLocaleString()} total rows
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl w-full">
+        {suggestions.map(({ q, icon }) => (
+          <button
+            key={q}
+            onClick={() => onQuestionClick(q)}
+            className={`flex items-start gap-3 text-left p-4 rounded-xl border hover:border-blue-300 hover:bg-blue-50/10 transition shadow-sm group ${
+              theme === 'dark'
+                ? 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:bg-zinc-800'
+                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            <span className="text-lg">{icon}</span>
+            <span className={`text-sm font-medium ${theme === 'dark' ? 'group-hover:text-blue-400' : 'group-hover:text-blue-700'}`}>{q}</span>
+          </button>
+        ))}
+      </div>
     </div>
-    <h2 className={`text-2xl font-bold mb-2 ${theme === 'dark' ? 'text-zinc-100' : 'text-slate-800'}`}>Limese Data Copilot</h2>
-    <p className={`mb-2 max-w-md ${theme === 'dark' ? 'text-zinc-400' : 'text-slate-500'}`}>
-      Ask questions about Limese sales, inventory, and products in plain English.
-    </p>
-    <p className={`text-xs mb-8 ${theme === 'dark' ? 'text-zinc-500' : 'text-slate-400'}`}>Connected to ClickHouse · 340K+ orders · ₹570 Cr revenue</p>
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl w-full">
-      {[
-        { q: "Show total revenue by platform as a pie chart", icon: "📊" },
-        { q: "What is the monthly sales trend for Nykaa Beauty in 2025?", icon: "📈" },
-        { q: "Top 10 best-selling SKUs by units ordered", icon: "🏆" },
-        { q: "Compare Skincare vs Makeup revenue by month", icon: "⚖️" },
-        { q: "Which products are low on inventory right now?", icon: "📦" },
-        { q: "Show revenue from Nykaa Beauty vs Myntra_PPMP vs Shopify", icon: "🌐" },
-      ].map(({ q, icon }) => (
-        <button
-          key={q}
-          onClick={() => onQuestionClick(q)}
-          className={`flex items-start gap-3 text-left p-4 rounded-xl hover:border-blue-300 hover:bg-blue-50 transition shadow-sm group ${
-            theme === 'dark'
-              ? 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:bg-zinc-800'
-              : 'bg-white border-slate-200 text-slate-600'
-          }`}
-        >
-          <span className="text-lg">{icon}</span>
-          <span className={`text-sm ${theme === 'dark' ? 'group-hover:text-blue-400' : 'group-hover:text-blue-700'}`}>{q}</span>
-        </button>
-      ))}
-    </div>
-  </div>
-)
+  )
+}
 
 // Live thinking indicator with elapsed timer
 const ThinkingIndicator: React.FC<{ seconds: number; theme: string }> = ({ seconds, theme }) => {
@@ -431,7 +655,7 @@ const ThinkingIndicator: React.FC<{ seconds: number; theme: string }> = ({ secon
     { at: 0, label: 'Understanding your question...' },
     { at: 3, label: 'Discovering schema & tables...' },
     { at: 6, label: 'Generating SQL query...' },
-    { at: 10, label: 'Executing on ClickHouse...' },
+    { at: 10, label: 'Executing on database...' },
     { at: 13, label: 'Analysing results...' },
     { at: 16, label: 'Building chart & insights...' },
     { at: 19, label: 'Composing response...' },
@@ -442,7 +666,7 @@ const ThinkingIndicator: React.FC<{ seconds: number; theme: string }> = ({ secon
   const current = reachedStages.length > 0 ? reachedStages[reachedStages.length - 1] : stages[0]
 
   return (
-    <div className="flex flex-col gap-2 mb-4">
+    <div className="flex flex-col gap-2 mb-4 animate-in fade-in duration-300">
       <div className={`flex items-center gap-2 ${theme === 'dark' ? 'text-zinc-400' : 'text-slate-400'}`}>
         <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
           <div className="w-2 h-2 rounded-full bg-white animate-ping" />

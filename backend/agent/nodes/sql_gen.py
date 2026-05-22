@@ -188,6 +188,55 @@ def _is_safe_sql(sql: str) -> tuple[bool, str]:
     return True, "OK"
 
 
+def _build_universal_schema_prompt(relevant_tables: list[dict]) -> str:
+    """
+    Constructs a detailed schema context prompt for non-ClickHouse or fallback datasources,
+    representing tables, columns, types, row count, null count, and sample data.
+    """
+    if not relevant_tables:
+        return "No tables available in schema context."
+        
+    lines = ["=== DATABASE SCHEMA ==="]
+    for table in relevant_tables:
+        tname = table.get("name", "")
+        row_count = table.get("row_count")
+        row_count_str = f" ({row_count:,} rows)" if row_count is not None else ""
+        desc = table.get("description", "")
+        desc_str = f" - {desc}" if desc else ""
+        
+        lines.append(f"\nTABLE: {tname}{row_count_str}{desc_str}")
+        
+        columns = table.get("columns", [])
+        for col in columns:
+            col_name = col.get("name", "")
+            col_type = col.get("type", "")
+            nullable = col.get("nullable", False)
+            pk = col.get("primary_key", False)
+            null_count = col.get("null_count", 0)
+            
+            col_meta = []
+            if pk:
+                col_meta.append("PRIMARY KEY")
+            if nullable:
+                col_meta.append("nullable")
+            if null_count > 0:
+                col_meta.append(f"null_count: {null_count}")
+            
+            meta_str = f" ({', '.join(col_meta)})" if col_meta else ""
+            annotation = col.get("annotation", "")
+            annotation_str = f"\n      ↳ {annotation}" if annotation else ""
+            
+            lines.append(f"  • `{col_name}` ({col_type}){meta_str}{annotation_str}")
+            
+        sample_data = table.get("sample_data", [])
+        if sample_data:
+            lines.append("  Sample Rows:")
+            for row in sample_data[:2]:
+                lines.append(f"    {json.dumps(row, default=str)}")
+                
+    return "\n".join(lines)
+
+
 async def generate_sql(state: AnalyticsState) -> AnalyticsState:
     # Skip if SQL already provided by semantic cache
     if state.get("sql_query"):
@@ -212,16 +261,14 @@ async def generate_sql(state: AnalyticsState) -> AnalyticsState:
         except Exception as exc:
             log.warning("sql_gen.db_intelligence_failed", error=str(exc))
 
-    schema_section = db_intelligence_context if db_intelligence_context else (
-        "Tables: " + ", ".join(t.get("name", "") for t in tables)
-    )
+    schema_section = db_intelligence_context if db_intelligence_context else _build_universal_schema_prompt(tables)
 
     q_lower = question.lower()
     has_units_keyword = any(w in q_lower for w in ["unit", "qty", "quantity", "volume", "order", "count"])
     has_revenue_keyword = any(w in q_lower for w in ["sales", "revenue", "subtotal", "price", "spend", "value", "amount", "earning", "profit"])
 
     # Fetch past successful queries from Qdrant for few-shot examples
-    similar_queries = vector_memory.search_similar_queries(question, limit=2)
+    similar_queries = vector_memory.search_similar_queries(question, user_id=state.get("user_id", "anonymous"), limit=2)
     examples_str = ""
     if similar_queries:
         filtered_examples = []

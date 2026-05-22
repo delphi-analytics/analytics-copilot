@@ -9,6 +9,7 @@ import { useChatStore, ChatSession } from '../../store/chat'
 import { useAuthStore } from '../../store/auth'
 import { useThemeStore } from '../../store/theme'
 import { logout } from '../../api/auth'
+import { getDatasources } from '../../api/client'
 
 interface SidebarProps {
   isOpen: boolean
@@ -16,8 +17,11 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
-  const { sessions, activeSessionId, loadSession, startNewSession, deleteSession, togglePin, getPinnedSessions } = useChatStore()
-  const { user, clearAuth } = useAuthStore()
+  const {
+    sessions, activeSessionId, loadSession, startNewSession, deleteSession,
+    togglePin, getPinnedSessions, datasourceId, setDatasourceId
+  } = useChatStore()
+  const { user, clearAuth, updateUser } = useAuthStore()
   const { theme, toggleTheme } = useThemeStore()
   const navigate = useNavigate()
 
@@ -25,6 +29,16 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
   const [showSettings, setShowSettings] = useState(false)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [datasources, setDatasources] = useState<any[]>([])
+
+  useEffect(() => {
+    if (showSettings) {
+      getDatasources()
+        .then(setDatasources)
+        .catch(err => console.error("Failed to load datasources", err))
+    }
+  }, [showSettings])
+
 
   const pinnedSessions = getPinnedSessions()
   const unpinnedSessions = sessions.filter(s => !s.pinned)
@@ -123,18 +137,55 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
                 <h4 className={`font-medium mb-1 ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>
                   Datasource
                 </h4>
-                <p className={`text-sm ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-600'}`}>
-                  Limese ClickHouse (Production)
-                </p>
+                {datasources.length === 0 ? (
+                  <p className={`text-sm ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-600'}`}>
+                    Loading datasources...
+                  </p>
+                ) : (
+                  <select
+                    value={datasourceId}
+                    onChange={(e) => {
+                      setDatasourceId(e.target.value)
+                      startNewSession()
+                    }}
+                    className={`w-full p-2 text-sm rounded border ${
+                      theme === 'dark'
+                        ? 'bg-zinc-800 border-zinc-600 text-white'
+                        : 'bg-white border-zinc-200 text-zinc-900'
+                    } outline-none focus:ring-1 focus:ring-blue-500`}
+                  >
+                    {datasources.map((ds) => (
+                      <option key={ds.id} value={ds.id}>
+                        {ds.id === 'default' ? 'SQLite Demo' : ds.id === 'limese' ? 'Limese ClickHouse' : `${ds.id} (${ds.type})`}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               <div className={`p-4 rounded-lg ${theme === 'dark' ? 'bg-zinc-700' : 'bg-zinc-50'}`}>
                 <h4 className={`font-medium mb-1 ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>
-                  Account
+                  Account & Role
                 </h4>
-                <p className={`text-sm ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-600'}`}>
-                  {user?.name} ({user?.role})
+                <p className={`text-sm mb-2 ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-600'}`}>
+                  {user?.name} ({user?.email})
                 </p>
+                <label className={`block text-[10px] font-semibold uppercase tracking-wider mb-1 ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                  Select User Role
+                </label>
+                <select
+                  value={user?.role || 'team_member'}
+                  onChange={(e) => updateUser({ role: e.target.value })}
+                  className={`w-full p-2 text-sm rounded border ${
+                    theme === 'dark'
+                      ? 'bg-zinc-800 border-zinc-600 text-white'
+                      : 'bg-white border-zinc-200 text-zinc-900'
+                  } outline-none focus:ring-1 focus:ring-blue-500`}
+                >
+                  <option value="business_analyst">Business Analyst</option>
+                  <option value="team_member">Team Member</option>
+                  <option value="non_tech_user">Non-tech User</option>
+                </select>
               </div>
             </div>
           </div>
@@ -395,15 +446,34 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
                       </div>
                       <div className="flex-1">
                         <p className={`font-semibold ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>{user.name}</p>
-                        <p className={`text-xs ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}>
-                          {user.role === 'admin' ? 'Administrator' :
+                        <p className={`text-[10px] ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                          Active Role: {user.role === 'admin' ? 'Administrator' :
                            user.role === 'business_analyst' ? 'Business Analyst' :
-                           user.role === 'team_member' ? 'Team Member' : 'User'}
+                           user.role === 'team_member' ? 'Team Member' : 'Non-tech User'}
                         </p>
                       </div>
                       <button className={`p-1 rounded ${theme === 'dark' ? 'hover:bg-zinc-700' : 'hover:bg-slate-100'}`}>
                         <Grid3X3 size={16} className={theme === 'dark' ? 'text-zinc-400' : 'text-zinc-400'} />
                       </button>
+                    </div>
+                    <div className="mt-3">
+                      <label className={`block text-[10px] font-semibold uppercase tracking-wider mb-1 ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                        Role Switcher
+                      </label>
+                      <select
+                        value={user?.role || 'team_member'}
+                        onChange={(e) => updateUser({ role: e.target.value })}
+                        onClick={(ev) => ev.stopPropagation()}
+                        className={`w-full px-2 py-1 text-xs rounded border ${
+                          theme === 'dark'
+                            ? 'bg-zinc-900 border-zinc-700 text-white'
+                            : 'bg-white border-zinc-200 text-zinc-900'
+                        } outline-none focus:ring-1 focus:ring-blue-500`}
+                      >
+                        <option value="business_analyst">Business Analyst</option>
+                        <option value="team_member">Team Member</option>
+                        <option value="non_tech_user">Non-tech User</option>
+                      </select>
                     </div>
                   </div>
 

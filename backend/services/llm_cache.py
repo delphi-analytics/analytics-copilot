@@ -43,15 +43,14 @@ class LLMCache:
         self._misses = 0
         self.use_redis = settings.redis_url is not None
 
-    def _make_key(self, question: str, datasource_id: str, metadata_hash: str = "") -> str:
+    def _make_key(self, question: str, datasource_id: str, user_id: str = "anonymous", metadata_hash: str = "") -> str:
         normalized = question.lower().strip()
-        # Key is based on question + datasource only.
-        # metadata_hash is stored separately for cache invalidation checks.
-        raw = f"{datasource_id}:{normalized}"
+        # Key is based on user_id, question, and datasource to enforce user-level isolation.
+        raw = f"{user_id}:{datasource_id}:{normalized}"
         return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
-    def get(self, question: str, datasource_id: str, metadata_hash: str = "") -> dict | None:
-        key = self._make_key(question, datasource_id, metadata_hash)
+    def get(self, question: str, datasource_id: str, user_id: str = "anonymous", metadata_hash: str = "") -> dict | None:
+        key = self._make_key(question, datasource_id, user_id, metadata_hash)
         with self._lock:
             entry = self._cache.get(key)
             if entry is None:
@@ -74,14 +73,14 @@ class LLMCache:
                 return None
 
             self._hits += 1
-            log.info("llm_cache.hit.memory", question=question[:60], datasource=datasource_id)
+            log.info("llm_cache.hit.memory", question=question[:60], datasource=datasource_id, user_id=user_id)
             return entry.result
 
-    async def get_async(self, question: str, datasource_id: str, metadata_hash: str = "") -> dict | None:
+    async def get_async(self, question: str, datasource_id: str, user_id: str = "anonymous", metadata_hash: str = "") -> dict | None:
         """Async version of get that checks Redis first, then memory.
         Returns None (cache miss) for entries with 0 rows — forces a fresh agent run.
         """
-        key = self._make_key(question, datasource_id, metadata_hash)
+        key = self._make_key(question, datasource_id, user_id, metadata_hash)
 
         # 1. Try Redis
         if self.use_redis:
@@ -93,20 +92,20 @@ class LLMCache:
                     await redis_cache.delete(f"llm_cache:{key}")
                 else:
                     self._hits += 1
-                    log.info("llm_cache.hit.redis", question=question[:60])
+                    log.info("llm_cache.hit.redis", question=question[:60], user_id=user_id)
                     return val
             else:
                 log.info("llm_cache.miss.redis", question=question[:60], key=key)
 
         # 2. Fallback to memory
-        result = self.get(question, datasource_id, metadata_hash)
+        result = self.get(question, datasource_id, user_id, metadata_hash)
         if result is not None and result.get("row_count", 0) == 0:
             log.info("llm_cache.miss.empty_memory", question=question[:60])
             return None
         return result
 
-    def set(self, question: str, datasource_id: str, result: dict, metadata_hash: str = "") -> None:
-        key = self._make_key(question, datasource_id, metadata_hash)
+    def set(self, question: str, datasource_id: str, result: dict, user_id: str = "anonymous", metadata_hash: str = "") -> None:
+        key = self._make_key(question, datasource_id, user_id, metadata_hash)
         with self._lock:
             # Evict oldest entries if at capacity
             if len(self._cache) >= MAX_CACHE_SIZE:
@@ -120,15 +119,15 @@ class LLMCache:
                 datasource_id=datasource_id,
                 metadata_hash=metadata_hash,
             )
-            log.info("llm_cache.set.memory", question=question[:60], datasource=datasource_id, key=key)
+            log.info("llm_cache.set.memory", question=question[:60], datasource=datasource_id, user_id=user_id, key=key)
 
-    async def set_async(self, question: str, datasource_id: str, result: dict, metadata_hash: str = "") -> None:
+    async def set_async(self, question: str, datasource_id: str, result: dict, user_id: str = "anonymous", metadata_hash: str = "") -> None:
         """Async version of set that writes to both memory and Redis."""
-        self.set(question, datasource_id, result, metadata_hash)
+        self.set(question, datasource_id, result, user_id, metadata_hash)
         if self.use_redis:
-            key = self._make_key(question, datasource_id, metadata_hash)
+            key = self._make_key(question, datasource_id, user_id, metadata_hash)
             await redis_cache.set(f"llm_cache:{key}", result, expire_seconds=CACHE_TTL_SECONDS)
-            log.info("llm_cache.set.redis", question=question[:60], key=key)
+            log.info("llm_cache.set.redis", question=question[:60], key=key, user_id=user_id)
 
     def stats(self) -> dict:
         with self._lock:

@@ -82,13 +82,25 @@ class ClickHouseConnector:
         loop = asyncio.get_event_loop()
 
         def _run() -> dict:
+            import json
+            from pathlib import Path
             client = self._get_client()
 
             # Get all tables
             tables_result = client.query(f"SHOW TABLES FROM {self.database}")
-            all_tables = [row[0] for row in tables_result.result_rows]
+            all_tables = [row[0] for row in tables_result.result_rows if not row[0].startswith(".")]
 
-            # Priority tables — the most useful for analytics
+            # Load existing db_intelligence if available to preserve descriptions/annotations
+            db_intel_path = Path(__file__).parent.parent / "data" / "db_intelligence.json"
+            existing_tables = {}
+            if db_intel_path.exists():
+                try:
+                    with open(db_intel_path, "r") as f:
+                        existing_tables = json.load(f).get("tables", {})
+                except Exception as e:
+                    log.warning("schema.load_db_intel_failed", error=str(e))
+
+            # Priority tables — the most useful for analytics, we scan these first
             PRIORITY_TABLES = [
                 "combined_sales_final",
                 "product_master",
@@ -104,10 +116,19 @@ class ClickHouseConnector:
                 "lead_time",
             ]
 
+            # Reorder all_tables to prioritize PRIORITY_TABLES
+            tables_to_scan = []
+            seen = set()
+            for t in PRIORITY_TABLES:
+                if t in all_tables:
+                    tables_to_scan.append(t)
+                    seen.add(t)
+            for t in all_tables:
+                if t not in seen:
+                    tables_to_scan.append(t)
+
             tables = []
-            for table_name in PRIORITY_TABLES:
-                if table_name not in all_tables:
-                    continue
+            for table_name in tables_to_scan:
                 try:
                     desc = client.query(f"DESCRIBE TABLE {self.database}.{table_name}")
                     columns = [
@@ -117,6 +138,41 @@ class ClickHouseConnector:
                     count_result = client.query(f"SELECT count() FROM {self.database}.{table_name}")
                     row_count = count_result.result_rows[0][0]
 
+                    # Calculate null counts for all columns
+                    null_counts = {}
+                    if row_count > 0 and columns:
+                        select_parts = [f"count() - count(`{col['name']}`)" for col in columns]
+                        nulls_sql = f"SELECT {', '.join(select_parts)} FROM {self.database}.{table_name}"
+                        try:
+                            nulls_result = client.query(nulls_sql)
+                            if nulls_result.result_rows:
+                                row_vals = nulls_result.result_rows[0]
+                                for col, val in zip(columns, row_vals):
+                                    null_counts[col["name"]] = int(val)
+                        except Exception as e:
+                            log.warning("schema.null_count_failed", table=table_name, error=str(e))
+
+                    # Preserve/apply annotations to each column
+                    for col in columns:
+                        col["null_count"] = null_counts.get(col["name"], 0)
+                        
+                        # Find custom annotation in existing DB intelligence json
+                        annotation = ""
+                        if table_name in existing_tables:
+                            old_cols = existing_tables[table_name].get("columns", [])
+                            for old_col in old_cols:
+                                if old_col.get("name") == col["name"]:
+                                    annotation = old_col.get("annotation") or ""
+                                    break
+                        if not annotation:
+                            # Fallback to COLUMN_ANNOTATIONS in db_intelligence
+                            try:
+                                from backend.services.db_intelligence import COLUMN_ANNOTATIONS as IntelAnnotations
+                                annotation = IntelAnnotations.get(table_name, {}).get(col["name"], "")
+                            except Exception:
+                                pass
+                        col["annotation"] = annotation
+
                     # Sample 2 rows
                     sample_result = client.query(f"SELECT * FROM {self.database}.{table_name} LIMIT 2")
                     sample_cols = list(sample_result.column_names)
@@ -125,12 +181,17 @@ class ClickHouseConnector:
                         for row in sample_result.result_rows
                     ]
 
+                    # Preserve table description
+                    description = TABLE_DESCRIPTIONS.get(table_name, "")
+                    if table_name in existing_tables:
+                        description = existing_tables[table_name].get("description") or description
+
                     tables.append({
                         "name": table_name,
                         "columns": columns,
                         "row_count": row_count,
                         "sample_data": sample_rows,
-                        "description": TABLE_DESCRIPTIONS.get(table_name, ""),
+                        "description": description,
                     })
                     log.debug("schema.table_loaded", table=table_name, rows=row_count)
                 except Exception as exc:
@@ -140,7 +201,7 @@ class ClickHouseConnector:
                 "tables": tables,
                 "database": self.database,
                 "total_tables": len(all_tables),
-                "priority_tables_loaded": len(tables),
+                "scanned_tables_count": len(tables),
             }
 
         return await loop.run_in_executor(None, _run)

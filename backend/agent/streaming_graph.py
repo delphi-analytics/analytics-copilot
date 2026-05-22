@@ -16,6 +16,7 @@ from backend.agent.nodes import (
     analyst, viz_config, responder
 )
 from backend.agent.nodes.insight_followup import handle_insight_followup, _is_insight_followup
+from backend.agent.nodes.general_llm import handle_general_query
 import structlog
 
 log = structlog.get_logger(__name__)
@@ -30,6 +31,11 @@ class StreamingGraphRunner:
             "progress": 10,
             "message": "Understanding your question...",
             "description": "Analyzing what you're asking for"
+        },
+        "general_llm": {
+            "progress": 50,
+            "message": "Formulating natural response...",
+            "description": "Answering conversational question"
         },
         "discover_schema": {
             "progress": 25,
@@ -146,6 +152,10 @@ class StreamingGraphRunner:
             self._wrap_node(intent.understand_intent, "understand_intent")
         )
         graph.add_node(
+            "general_llm",
+            self._wrap_node(handle_general_query, "general_llm")
+        )
+        graph.add_node(
             "discover_schema",
             self._wrap_node(schema.discover_schema, "discover_schema")
         )
@@ -191,7 +201,10 @@ class StreamingGraphRunner:
             if intent_type == "analytical_question":
                 return "generate_sql"
 
-            if intent_type in ("greeting", "off_topic", "export_request"):
+            if intent_type in ("greeting", "off_topic", "conversational"):
+                return "general_llm"
+
+            if intent_type == "export_request":
                 return "skip_to_respond"
 
             return "generate_sql"
@@ -202,6 +215,7 @@ class StreamingGraphRunner:
             {
                 "generate_sql": "discover_schema",
                 "skip_to_respond": "compose_response",
+                "general_llm": "general_llm",
                 "insight_followup": "insight_followup",
             }
         )
@@ -211,6 +225,7 @@ class StreamingGraphRunner:
         graph.add_edge("analyze_insights", "generate_viz_config")
         graph.add_edge("generate_viz_config", "compose_response")
         graph.add_edge("insight_followup", "compose_response")
+        graph.add_edge("general_llm", "compose_response")
         graph.add_edge("compose_response", "__end__")
 
         return graph.compile()

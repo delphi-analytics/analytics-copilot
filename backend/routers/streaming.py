@@ -91,6 +91,100 @@ async def _stream_agent_execution(
     db.add(user_msg)
     await db.flush()
 
+    # ─── DISAMBIGUATION CHECK ─────────────────────────────────────────────────
+    from backend.services.disambiguation import check_disambiguation
+    disambiguation_result = await check_disambiguation(question)
+    if disambiguation_result:
+        result = {
+            "conversation_id": conv_id,
+            "message_id": str(uuid.uuid4()),
+            "text": f"**Clarification Needed:** What do you mean by '{disambiguation_result['keyword']}'?",
+            "chart": None,
+            "insights": [f"Please select the intended meaning of '{disambiguation_result['keyword']}'"],
+            "key_metrics": {},
+            "follow_up_questions": disambiguation_result.get("meanings", disambiguation_result.get("options", [])),
+            "sql": "",
+            "row_count": 0,
+            "viz_type": None,
+            "columns": [],
+            "rows": [],
+            "total_latency_ms": 0,
+            "model_used": "",
+            "error": f"DISAMBIGUATION_NEEDED:{disambiguation_result['keyword']}:{','.join(disambiguation_result.get('meanings', disambiguation_result.get('options', [])))}",
+        }
+        # Save assistant message for disambiguation
+        assistant_msg = Message(
+            id=result["message_id"],
+            conversation_id=conv_id,
+            role="assistant",
+            content=result["text"],
+            sql_query="",
+            query_results={"columns": [], "rows": [], "row_count": 0},
+            viz_config=None,
+            insights=result["insights"],
+            follow_up_questions=result["follow_up_questions"],
+            model_used="",
+            latency_ms=0,
+            error=result["error"],
+        )
+        db.add(assistant_msg)
+        await db.commit()
+
+        yield f"data: {json.dumps({'type': 'complete', 'result': result})}\n\n"
+        return
+
+    # ─── QA MEMORY CHECK ─────────────────────────────────────────────────────
+    try:
+        from backend.services.knowledge.business_knowledge import get_qa_memory_service
+        qa_service = get_qa_memory_service()
+        cached = qa_service.search(question, user_id=user_id, threshold=0.92)
+        if cached:
+            # Save assistant message to database
+            assistant_msg = Message(
+                id=str(uuid.uuid4()),
+                conversation_id=conv_id,
+                role="assistant",
+                content=cached.get("answer", ""),
+                sql_query=cached.get("sql", ""),
+                query_results={
+                    "columns": cached.get("columns", []),
+                    "rows": [],
+                    "row_count": 0,
+                },
+                viz_config=None,
+                insights=[],
+                follow_up_questions=[],
+                model_used="qa_memory_cache",
+                latency_ms=50,
+                error=None,
+            )
+            db.add(assistant_msg)
+            await db.commit()
+
+            result = {
+                "conversation_id": conv_id,
+                "message_id": assistant_msg.id,
+                "text": cached.get("answer", ""),
+                "chart": None,
+                "insights": [],
+                "key_metrics": {},
+                "follow_up_questions": [],
+                "sql": cached.get("sql", ""),
+                "sql_explanation": "",
+                "row_count": 0,
+                "viz_type": cached.get("viz_type"),
+                "columns": cached.get("columns", []),
+                "rows": [],
+                "total_latency_ms": 50,
+                "model_used": "qa_memory_cache",
+            }
+            yield f"data: {json.dumps({'type': 'complete', 'result': result})}\n\n"
+            return
+    except Exception as e:
+        import structlog
+        structlog.get_logger(__name__).warning("stream_cache_check.failed", error=str(e))
+
+
     # Run agent with REAL progress tracking
     try:
         graph_runner = get_streaming_graph()

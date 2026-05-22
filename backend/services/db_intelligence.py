@@ -89,7 +89,7 @@ def _get_client() -> Any:
     )
 
 
-def _scan_table(client: Any, table: str) -> dict:
+def _scan_table(client: Any, table: str, existing_table: dict | None = None) -> dict:
     """Deep-scan a single table and return structured context."""
     log.info("db_intelligence.scanning", table=table)
 
@@ -112,10 +112,19 @@ def _scan_table(client: Any, table: str) -> dict:
     for col in columns_raw:
         col_name = col["name"]
         col_type = col["type"]
+        
+        # Check if we have an annotation in existing_table first, then fall back to COLUMN_ANNOTATIONS
+        existing_col_annotation = ""
+        if existing_table:
+            for old_col in existing_table.get("columns", []):
+                if old_col.get("name") == col_name and old_col.get("annotation"):
+                    existing_col_annotation = old_col["annotation"]
+                    break
+        
         info: dict = {
             "name": col_name,
             "type": col_type,
-            "annotation": annotations.get(col_name, ""),
+            "annotation": existing_col_annotation or annotations.get(col_name, ""),
         }
 
         # Try to get unique count + sample values
@@ -128,6 +137,7 @@ def _scan_table(client: Any, table: str) -> dict:
             non_null = int(r.result_rows[0][1])
             info["unique_count"] = unique
             info["non_null_count"] = non_null
+            info["null_count"] = max(0, cnt - non_null)
 
             # Fetch all values for low-cardinality columns
             if 1 < unique <= MAX_CATEGORICAL:
@@ -224,6 +234,14 @@ def _scan_table(client: Any, table: str) -> dict:
         except Exception:
             pass
 
+    # Copy table description and aliases from existing context
+    if existing_table:
+        result["description"] = existing_table.get("description", "")
+        result["aliases"] = existing_table.get("aliases", [])
+    else:
+        result["description"] = ""
+        result["aliases"] = []
+
     return result
 
 
@@ -234,13 +252,43 @@ def build_db_context() -> dict:
     Takes 30-90 seconds on first run; cached to disk.
     """
     client = _get_client()
-    log.info("db_intelligence.starting_scan", tables=PRIORITY_TABLES)
     t0 = time.time()
 
-    tables_context = {}
-    for table in PRIORITY_TABLES:
+    # Load existing context if available to preserve descriptions, aliases, etc.
+    existing_context = {}
+    if CONTEXT_FILE.exists():
         try:
-            tables_context[table] = _scan_table(client, table)
+            with open(CONTEXT_FILE, "r") as f:
+                existing_context = json.load(f)
+        except Exception as e:
+            log.warning("db_intelligence.load_existing_failed", error=str(e))
+
+    existing_tables = existing_context.get("tables", {})
+
+    # Dynamically scan all tables in the database, prioritize PRIORITY_TABLES
+    try:
+        tables_res = client.query("SHOW TABLES").result_rows
+        all_tables = [r[0] for r in tables_res if not r[0].startswith(".")]
+        seen = set()
+        tables_to_scan = []
+        for t in PRIORITY_TABLES:
+            if t in all_tables:
+                tables_to_scan.append(t)
+                seen.add(t)
+        for t in all_tables:
+            if t not in seen:
+                tables_to_scan.append(t)
+    except Exception as e:
+        log.warning("db_intelligence.show_tables_failed", error=str(e))
+        tables_to_scan = PRIORITY_TABLES
+
+    log.info("db_intelligence.starting_scan", tables_count=len(tables_to_scan))
+
+    tables_context = {}
+    for table in tables_to_scan:
+        try:
+            existing_table = existing_tables.get(table)
+            tables_context[table] = _scan_table(client, table, existing_table)
         except Exception as exc:
             log.error("db_intelligence.table_failed", table=table, error=str(exc))
             tables_context[table] = {"table": table, "error": str(exc)}
@@ -267,33 +315,58 @@ def build_db_context() -> dict:
 
 
 def _build_global_notes(tables: dict) -> list[str]:
-    """Human-readable rules derived from the scan, injected as LLM instructions."""
+    """Human-readable rules derived from the scan, injected as LLM instructions.
+
+    All notes are derived dynamically from the actual scan results —
+    no hardcoded database or brand names.
+    """
     notes = [
-        "DATABASE: Limese — Indian beauty brand. Revenue in Indian Rupees (₹).",
         "READ-ONLY: Never generate INSERT/UPDATE/DELETE/DROP/CREATE/ALTER SQL.",
     ]
 
-    # Extract exact platform names from scan
-    csf = tables.get("combined_sales_final", {})
-    for col in csf.get("columns", []):
-        if col["name"] == "sales_platform" and col.get("exact_values"):
-            vals = col["exact_values"]
-            notes.append(
-                f"PLATFORM NAMES (exact, case-sensitive for WHERE filters): {vals}"
-            )
-        if col["name"] == "client_name" and col.get("constant_value"):
-            notes.append(
-                f"client_name is ALWAYS '{col['constant_value']}' — NEVER group by it for platform analysis."
-            )
+    # Derive database-level context from the scanned tables
+    total_rows = sum(t.get("row_count", 0) for t in tables.values() if isinstance(t, dict))
+    table_names = [t for t in tables.keys() if isinstance(tables[t], dict) and not tables[t].get("error")]
+    if table_names:
+        notes.append(f"DATABASE TABLES ({len(table_names)}): {', '.join(table_names[:15])}")
+    if total_rows:
+        notes.append(f"TOTAL ROWS: {total_rows:,}")
 
+    # Extract useful column-level insights from annotated tables
+    for tname, tdata in tables.items():
+        if not isinstance(tdata, dict) or tdata.get("error"):
+            continue
+
+        for col in tdata.get("columns", []):
+            annotation = col.get("annotation", "")
+            col_name = col.get("name", "")
+
+            # Surface exact categorical values for the LLM (e.g. platform names, statuses)
+            if col.get("exact_values") and col.get("is_categorical"):
+                vals = col["exact_values"]
+                if len(vals) <= 25:
+                    notes.append(
+                        f"{tname}.{col_name} — exact values (case-sensitive): {vals}"
+                    )
+
+            # Surface constant columns so the LLM doesn't group by them
+            if col.get("is_constant") and col.get("constant_value"):
+                notes.append(
+                    f"{tname}.{col_name} is ALWAYS '{col['constant_value']}' — NEVER group by this."
+                )
+
+            # Surface key annotations
+            if annotation and any(kw in annotation.upper() for kw in ["REVENUE", "USE THIS", "PRIMARY", "DIMENSION", "MANDATORY", "NEVER"]):
+                notes.append(f"{tname}.{col_name}: {annotation}")
+
+        # Surface business facts if available
+        if tdata.get("business_facts"):
+            facts = tdata["business_facts"]
+            facts_str = ", ".join(f"{k}: {v}" for k, v in facts.items())
+            notes.append(f"{tname} facts: {facts_str}")
+
+    # ClickHouse-specific tips (applicable to all ClickHouse databases)
     notes += [
-        "REVENUE COLUMN: row_subtotal in combined_sales_final (NOT order_price).",
-        "UNITS COLUMN: quantity_ordered in combined_sales_final (NOT shipped_qty — always 0).",
-        "DATE FILTER: date_created >= '2025-01-01' (do NOT use toYear() — fails with timezone-aware DateTime).",
-        "MANDATORY FILTER: WHERE final_status NOT IN ('cancelled','Cancelled','CANCELLED','returned','Returned').",
-        "DATE GROUPING: formatDateTime(date_created, '%Y-%m') for year-month.",
-        "JOIN pattern: combined_sales_final csf LEFT JOIN product_master pm ON csf.internal_sku = pm.internal_sku.",
-        "INVENTORY: Use inventory_sales_overview_new WHERE date >= today() - 2 for current stock.",
         "CLICKHOUSE FUNCTIONS: ifNull(col, 0), uniq(), groupArray(), toDate(), formatDateTime().",
         "LIMIT: Always add LIMIT (max 10000 for detail, 50 for aggregations).",
     ]

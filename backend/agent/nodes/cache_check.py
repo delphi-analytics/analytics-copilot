@@ -13,8 +13,10 @@ async def check_qa_memory(state: AnalyticsState) -> AnalyticsState:
         from backend.services.knowledge.business_knowledge import get_qa_memory_service
         qa_service = get_qa_memory_service()
 
+        user_id = state.get("user_id", "anonymous")
+
         # First check: high similarity (≥0.92) = return cached answer
-        cached = qa_service.search(question, threshold=0.92)
+        cached = qa_service.search(question, user_id=user_id, threshold=0.92)
         if cached:
             log.info("cache_check.hit_high_similarity", question=question[:50], similarity="≥0.92")
             return {
@@ -39,7 +41,7 @@ async def check_qa_memory(state: AnalyticsState) -> AnalyticsState:
             }
 
         # Second check: medium similarity (0.75-0.92) = re-run SQL only
-        cached_sql = qa_service.search(question, threshold=0.75)
+        cached_sql = qa_service.search(question, user_id=user_id, threshold=0.75)
         if cached_sql and cached_sql.get("sql"):
             log.info("cache_check.hit_medium_similarity", question=question[:50], similarity="0.75-0.92")
             return {

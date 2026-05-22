@@ -104,3 +104,9 @@ export const getSchema = async (datasource_id: string) => {
   const { data } = await api.get(`/copilot/schema/${datasource_id}`)
   return data
 }
+
+export const getDatasources = async () => {
+  const { data } = await api.get('/copilot/datasources')
+  return data
+}
+

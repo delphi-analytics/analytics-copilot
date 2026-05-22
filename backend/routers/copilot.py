@@ -137,7 +137,7 @@ async def query(payload: QueryRequest, db: DbDep, current_user: UserDep = None) 
 
     # Check LLM cache first (Canary pattern — 80% latency reduction on repeats)
     cache = _get_llm_cache()
-    cached = await cache.get_async(question=payload.question, datasource_id=payload.datasource_id)
+    cached = await cache.get_async(question=payload.question, datasource_id=payload.datasource_id, user_id=user_id)
     if cached:
         # Get or create conversation
         conversation_id = payload.conversation_id
@@ -342,6 +342,7 @@ async def query(payload: QueryRequest, db: DbDep, current_user: UserDep = None) 
         await cache.set_async(   # reuse cache object from top of function
             question=payload.question,
             datasource_id=payload.datasource_id,
+            user_id=user_id,
             result={
                 "text": agent_result.get("text", ""),
                 "chart": agent_result.get("chart"),
@@ -415,6 +416,13 @@ async def get_datasource_schema(datasource_id: str) -> dict:
     """Get the schema (tables + columns) for a datasource."""
     schema = await get_schema(datasource_id)
     return schema
+
+
+@router.get("/datasources")
+async def list_datasources() -> list[dict]:
+    """List all registered datasources."""
+    from backend.data.connector import get_registered_datasources
+    return get_registered_datasources()
 
 
 @router.get("/history/{conversation_id}")
