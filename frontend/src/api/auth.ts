@@ -59,6 +59,12 @@ export const createDemoUser = async (
   name?: string,
   role?: string
 ): Promise<{ id: string; email: string; name: string; role: string }> => {
-  const { data } = await authApi.post('/demo/create-user', { email, password, name, role })
+  const params = new URLSearchParams({
+    email,
+    password,
+    name: name || 'Demo User',
+    role: role || 'business_analyst'
+  })
+  const { data } = await authApi.post(`/demo/create-user?${params.toString()}`)
   return data
 }
