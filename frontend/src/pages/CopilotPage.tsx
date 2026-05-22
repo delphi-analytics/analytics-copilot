@@ -174,22 +174,6 @@ export const CopilotPage: React.FC = () => {
       }
     })
   }
-      }
-    } catch (err: unknown) {
-      addAssistantMessage({
-        conversation_id: conversationId || '',
-        message_id: crypto.randomUUID(),
-        text: 'Something went wrong. Please try after some time.',
-        chart: null, insights: [], key_metrics: {}, follow_up_questions: [],
-        sql: '', sql_explanation: '', row_count: 0, viz_type: null,
-        columns: [], rows: [], total_latency_ms: 0, model_used: '',
-        error: String(err),
-      }, targetSessionId)
-    } finally {
-      setLoading(false)
-    }
-  }
-
 
 
   return (

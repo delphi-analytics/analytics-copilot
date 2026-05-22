@@ -1,12 +1,12 @@
 {
   "database": "limese",
   "host": "118.95.209.221:8123",
-  "scanned_at": "2026-05-21T07:58:30.086509",
-  "scan_duration_seconds": 217.7,
+  "scanned_at": "2026-05-22T05:56:55.378862",
+  "scan_duration_seconds": 264.0,
   "tables": {
     "combined_sales_final": {
       "table": "combined_sales_final",
-      "row_count": 341220,
+      "row_count": 341272,
       "total_columns": 65,
       "columns": [
         {
@@ -14,7 +14,7 @@
           "type": "LowCardinality(String)",
           "annotation": "",
           "unique_count": 1,
-          "non_null_count": 341220,
+          "non_null_count": 341272,
           "constant_value": "Limese",
           "is_constant": true
         },
@@ -23,7 +23,7 @@
           "type": "LowCardinality(String)",
           "annotation": "CONSTANT 'Limese' for all rows \u2014 NEVER group by this for platform analysis.",
           "unique_count": 1,
-          "non_null_count": 341220,
+          "non_null_count": 341272,
           "constant_value": "Limese",
           "is_constant": true
         },
@@ -32,7 +32,7 @@
           "type": "LowCardinality(Nullable(String))",
           "annotation": "DIMENSION \u2014 use this to GROUP BY platform. Contains exact platform names shown below.",
           "unique_count": 13,
-          "non_null_count": 341220,
+          "non_null_count": 341272,
           "exact_values": [
             "AJIO Online",
             "AZORTE Online",
@@ -54,8 +54,8 @@
           "name": "oms_order_no",
           "type": "String",
           "annotation": "",
-          "unique_count": 27394,
-          "non_null_count": 341220
+          "unique_count": 27446,
+          "non_null_count": 341272
         },
         {
           "name": "suborder_code",
@@ -68,8 +68,8 @@
           "name": "external_sku",
           "type": "Nullable(String)",
           "annotation": "Platform-specific SKU code.",
-          "unique_count": 3100,
-          "non_null_count": 341215
+          "unique_count": 3101,
+          "non_null_count": 341267
         },
         {
           "name": "internal_sku",
@@ -82,8 +82,8 @@
           "name": "erp_order_no",
           "type": "String",
           "annotation": "",
-          "unique_count": 27338,
-          "non_null_count": 341220
+          "unique_count": 27389,
+          "non_null_count": 341272
         },
         {
           "name": "invoice_number",
@@ -107,22 +107,22 @@
           "name": "date_created",
           "type": "DateTime64(3)",
           "annotation": "Primary date column. Filter: date_created >= '2025-01-01'. Group: formatDateTime(date_created, '%Y-%m').",
-          "unique_count": 22192,
-          "non_null_count": 341220,
+          "unique_count": 22244,
+          "non_null_count": 341272,
           "date_range": {
             "min": "2025-01-01 00:00:00.000",
-            "max": "2026-05-19 23:49:58.000"
+            "max": "2026-05-21 10:55:53.000"
           }
         },
         {
           "name": "date_completed",
           "type": "Nullable(DateTime64(3))",
           "annotation": "",
-          "unique_count": 1810,
-          "non_null_count": 174746,
+          "unique_count": 1813,
+          "non_null_count": 174751,
           "date_range": {
             "min": "2025-01-01 00:00:00.000",
-            "max": "2026-05-19 10:48:56.000"
+            "max": "2026-05-21 18:49:20.000"
           }
         },
         {
@@ -141,7 +141,7 @@
           "type": "LowCardinality(Nullable(String))",
           "annotation": "",
           "unique_count": 18,
-          "non_null_count": 164184,
+          "non_null_count": 164236,
           "exact_values": [
             "C",
             "CANCELLED",
@@ -169,7 +169,7 @@
           "type": "LowCardinality(Nullable(String))",
           "annotation": "",
           "unique_count": 18,
-          "non_null_count": 164184,
+          "non_null_count": 164236,
           "exact_values": [
             "C",
             "CANCELLED",
@@ -197,7 +197,7 @@
           "type": "LowCardinality(Nullable(String))",
           "annotation": "Order outcome. ALWAYS exclude: NOT IN ('cancelled','Cancelled','CANCELLED','returned','Returned').",
           "unique_count": 6,
-          "non_null_count": 341220,
+          "non_null_count": 341272,
           "exact_values": [
             "Cancelled",
             "Delivered",
@@ -213,11 +213,11 @@
           "type": "Nullable(Float32)",
           "annotation": "",
           "unique_count": 269,
-          "non_null_count": 195189,
+          "non_null_count": 195240,
           "numerical_range": {
             "min": 0.0,
             "max": 9620.0,
-            "avg": 1364.88
+            "avg": 1364.76
           }
         },
         {
@@ -225,7 +225,7 @@
           "type": "Nullable(Float32)",
           "annotation": "",
           "unique_count": 111028,
-          "non_null_count": 341220,
+          "non_null_count": 341272,
           "numerical_range": {
             "min": 0.0,
             "max": Infinity,
@@ -237,23 +237,23 @@
           "type": "Nullable(Float32)",
           "annotation": "",
           "unique_count": 4061,
-          "non_null_count": 195189,
+          "non_null_count": 195240,
           "numerical_range": {
             "min": 0.0,
             "max": 10400850.0,
-            "avg": 12563.89
+            "avg": 12560.87
           }
         },
         {
           "name": "row_subtotal",
           "type": "Nullable(Float32)",
           "annotation": "REVENUE per line item \u2014 USE THIS for revenue/sales. Do NOT use order_price (full order total).",
-          "unique_count": 36679,
-          "non_null_count": 335857,
+          "unique_count": 36681,
+          "non_null_count": 335909,
           "numerical_range": {
             "min": -7518.14990234375,
             "max": 26688616.0,
-            "avg": 20325.54
+            "avg": 20322.54
           }
         },
         {
@@ -261,11 +261,11 @@
           "type": "Nullable(Float32)",
           "annotation": "",
           "unique_count": 130177,
-          "non_null_count": 341220,
+          "non_null_count": 341272,
           "numerical_range": {
             "min": -2000.0,
             "max": 26688472.0,
-            "avg": 18959.56
+            "avg": 18956.81
           }
         },
         {
@@ -273,11 +273,11 @@
           "type": "Nullable(Float32)",
           "annotation": "",
           "unique_count": 7771,
-          "non_null_count": 341220,
+          "non_null_count": 341272,
           "numerical_range": {
             "min": 0.0,
             "max": 75683928.0,
-            "avg": 2952314.05
+            "avg": 2951864.34
           }
         },
         {
@@ -285,11 +285,11 @@
           "type": "Nullable(Float32)",
           "annotation": "",
           "unique_count": 96116,
-          "non_null_count": 330021,
+          "non_null_count": 330073,
           "numerical_range": {
             "min": -10825.0,
             "max": 4044606.0,
-            "avg": 1263.98
+            "avg": 1263.79
           }
         },
         {
@@ -297,7 +297,7 @@
           "type": "Nullable(Float32)",
           "annotation": "",
           "unique_count": 63,
-          "non_null_count": 138184,
+          "non_null_count": 138236,
           "exact_values": [
             "0.0",
             "100.0",
@@ -377,11 +377,11 @@
           "type": "Nullable(Float32)",
           "annotation": "UNITS per line \u2014 USE THIS for unit counts. Do NOT use shipped_qty (always 0).",
           "unique_count": 1449,
-          "non_null_count": 341220,
+          "non_null_count": 341272,
           "numerical_range": {
             "min": -1.0,
             "max": 37000.0,
-            "avg": 21.48
+            "avg": 21.47
           }
         },
         {
@@ -389,7 +389,7 @@
           "type": "Nullable(Float32)",
           "annotation": "",
           "unique_count": 11,
-          "non_null_count": 25224,
+          "non_null_count": 25275,
           "exact_values": [
             "0.0",
             "1.0",
@@ -431,7 +431,7 @@
           "type": "Nullable(Float32)",
           "annotation": "",
           "unique_count": 6,
-          "non_null_count": 25224,
+          "non_null_count": 25275,
           "exact_values": [
             "0.0",
             "1.0",
@@ -988,7 +988,7 @@
           "type": "LowCardinality(Nullable(String))",
           "annotation": "",
           "unique_count": 1,
-          "non_null_count": 133124,
+          "non_null_count": 133125,
           "constant_value": "None",
           "is_constant": true
         },
@@ -997,7 +997,7 @@
           "type": "LowCardinality(Nullable(String))",
           "annotation": "",
           "unique_count": 12,
-          "non_null_count": 138960,
+          "non_null_count": 138961,
           "exact_values": [
             "01. Razorpay UPI, Cards, Wallets",
             "1Razorpay - UPI, Cards, Wallets, NB",
@@ -1019,7 +1019,7 @@
           "type": "LowCardinality(Nullable(String))",
           "annotation": "",
           "unique_count": 12,
-          "non_null_count": 135773,
+          "non_null_count": 135774,
           "exact_values": [
             "0",
             "01. Razorpay UPI, Cards, Wallets",
@@ -1041,7 +1041,7 @@
           "type": "LowCardinality(Nullable(String))",
           "annotation": "",
           "unique_count": 8,
-          "non_null_count": 133124,
+          "non_null_count": 133125,
           "exact_values": [
             "Due on Receipt",
             "Net 15",
@@ -1212,15 +1212,15 @@
           "name": "customer_email",
           "type": "Nullable(String)",
           "annotation": "",
-          "unique_count": 947,
-          "non_null_count": 7440
+          "unique_count": 948,
+          "non_null_count": 7441
         },
         {
           "name": "customer_mobile",
           "type": "Nullable(String)",
           "annotation": "",
-          "unique_count": 973,
-          "non_null_count": 8212
+          "unique_count": 974,
+          "non_null_count": 8213
         },
         {
           "name": "gender",
@@ -1233,8 +1233,8 @@
           "name": "first_name",
           "type": "Nullable(String)",
           "annotation": "",
-          "unique_count": 1123,
-          "non_null_count": 138960
+          "unique_count": 1124,
+          "non_null_count": 138961
         },
         {
           "name": "last_name",
@@ -1345,8 +1345,8 @@
           "name": "shipping_pincode",
           "type": "Nullable(String)",
           "annotation": "",
-          "unique_count": 4691,
-          "non_null_count": 152985
+          "unique_count": 4704,
+          "non_null_count": 153037
         },
         {
           "name": "shipping_state",
@@ -1381,7 +1381,7 @@
           "type": "LowCardinality(Nullable(String))",
           "annotation": "",
           "unique_count": 22,
-          "non_null_count": 138167,
+          "non_null_count": 138218,
           "exact_values": [
             "Amazon FBA",
             "B2C",
@@ -1413,7 +1413,7 @@
           "type": "LowCardinality(String)",
           "annotation": "",
           "unique_count": 8,
-          "non_null_count": 341220,
+          "non_null_count": 341272,
           "exact_values": [
             "Flipkart_Earn_More",
             "Myntra_PPMP",
@@ -1430,8 +1430,8 @@
           "name": "last_etl_update",
           "type": "Nullable(DateTime64(3))",
           "annotation": "",
-          "unique_count": 104,
-          "non_null_count": 341220,
+          "unique_count": 105,
+          "non_null_count": 341272,
           "exact_values": [
             "2026-01-21 00:20:58+05:30",
             "2026-01-28 11:33:15+05:30",
@@ -1536,20 +1536,21 @@
             "2026-05-18 09:00:04+05:30",
             "2026-05-19 09:00:05+05:30",
             "2026-05-20 09:00:05+05:30",
-            "2026-05-21 09:00:04+05:30"
+            "2026-05-21 09:00:04+05:30",
+            "2026-05-22 09:00:05+05:30"
           ],
           "is_categorical": true,
           "date_range": {
             "min": "2026-01-21 00:20:58.000",
-            "max": "2026-05-21 09:00:04.000"
+            "max": "2026-05-22 09:00:05.000"
           }
         }
       ],
       "business_facts": {
-        "total_revenue_crore": 563.93,
-        "total_orders": 286019,
-        "total_units": 5710137,
-        "date_range": "2025-01-01 00:00:00+05:30 to 2026-05-19 23:49:58+05:30"
+        "total_revenue_crore": 563.94,
+        "total_orders": 286071,
+        "total_units": 5710193,
+        "date_range": "2025-01-01 00:00:00+05:30 to 2026-05-21 10:55:53+05:30"
       }
     },
     "product_master": {
@@ -2271,7 +2272,7 @@
     },
     "inventory_sales_overview_new": {
       "table": "inventory_sales_overview_new",
-      "row_count": 1141379,
+      "row_count": 1144465,
       "total_columns": 16,
       "columns": [
         {
@@ -2279,14 +2280,14 @@
           "type": "String",
           "annotation": "Internal SKU \u2014 join to product_master.internal_sku.",
           "unique_count": 3955,
-          "non_null_count": 1141379
+          "non_null_count": 1144465
         },
         {
           "name": "facility",
           "type": "String",
           "annotation": "",
           "unique_count": 1,
-          "non_null_count": 1141379,
+          "non_null_count": 1144465,
           "constant_value": "warehouse",
           "is_constant": true
         },
@@ -2295,7 +2296,7 @@
           "type": "String",
           "annotation": "",
           "unique_count": 2,
-          "non_null_count": 1141379,
+          "non_null_count": 1144465,
           "exact_values": [
             "unicommerce_inventory",
             "zoho_inventory"
@@ -2306,11 +2307,11 @@
           "name": "date",
           "type": "DateTime64(6, 'Asia/Kolkata')",
           "annotation": "Snapshot date. For latest stock: WHERE date >= today() - 2",
-          "unique_count": 238,
-          "non_null_count": 1141379,
+          "unique_count": 240,
+          "non_null_count": 1144465,
           "date_range": {
             "min": "2025-09-24 00:00:00.000000",
-            "max": "2026-05-20 00:00:00.000000"
+            "max": "2026-05-22 00:00:00.000000"
           }
         },
         {
@@ -2318,11 +2319,11 @@
           "type": "Nullable(Float64)",
           "annotation": "Units on hand RIGHT NOW. USE THIS for stock level queries.",
           "unique_count": 5484,
-          "non_null_count": 1141379,
+          "non_null_count": 1144465,
           "numerical_range": {
             "min": -48737.0,
             "max": 100000.0,
-            "avg": 110.47
+            "avg": 110.17
           }
         },
         {
@@ -2330,23 +2331,23 @@
           "type": "Nullable(Float64)",
           "annotation": "Units sold that day.",
           "unique_count": 1170,
-          "non_null_count": 1141379,
+          "non_null_count": 1144465,
           "numerical_range": {
             "min": 0.0,
             "max": 37000.0,
-            "avg": 2.52
+            "avg": 2.51
           }
         },
         {
           "name": "sp",
           "type": "Nullable(Float64)",
           "annotation": "",
-          "unique_count": 11855,
-          "non_null_count": 1141379,
+          "unique_count": 11859,
+          "non_null_count": 1144465,
           "numerical_range": {
             "min": 0.0,
             "max": 26688469.99,
-            "avg": 1541.03
+            "avg": 1536.92
           }
         },
         {
@@ -2354,14 +2355,14 @@
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 1181,
-          "non_null_count": 548003
+          "non_null_count": 550381
         },
         {
           "name": "category",
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 3,
-          "non_null_count": 484693,
+          "non_null_count": 486605,
           "exact_values": [
             "Haircare",
             "Makeup",
@@ -2374,11 +2375,11 @@
           "type": "Nullable(Int32)",
           "annotation": "",
           "unique_count": 321,
-          "non_null_count": 531955,
+          "non_null_count": 534197,
           "numerical_range": {
             "min": 0.0,
             "max": 1892.0,
-            "avg": 438.71
+            "avg": 438.57
           }
         },
         {
@@ -2386,7 +2387,7 @@
           "type": "Nullable(Int64)",
           "annotation": "",
           "unique_count": 147,
-          "non_null_count": 531955,
+          "non_null_count": 534197,
           "exact_values": [
             "0",
             "100",
@@ -2543,23 +2544,23 @@
           "type": "Nullable(Float64)",
           "annotation": "Daily revenue in \u20b9.",
           "unique_count": 4324,
-          "non_null_count": 531955,
+          "non_null_count": 534197,
           "numerical_range": {
             "min": 0.0,
             "max": 53650000.0,
-            "avg": 6308.5
+            "avg": 6282.17
           }
         },
         {
           "name": "holding_price",
           "type": "Nullable(Float64)",
           "annotation": "",
-          "unique_count": 15660,
-          "non_null_count": 531955,
+          "unique_count": 15661,
+          "non_null_count": 534197,
           "numerical_range": {
             "min": -54182150.0,
             "max": 107993100.0,
-            "avg": 224807.29
+            "avg": 223869.89
           }
         },
         {
@@ -2567,7 +2568,7 @@
           "type": "UInt8",
           "annotation": "Fixed 90-day config value \u2014 do NOT use for calculations.",
           "unique_count": 1,
-          "non_null_count": 1141379,
+          "non_null_count": 1144465,
           "constant_value": "90",
           "is_constant": true
         },
@@ -2576,7 +2577,7 @@
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 32,
-          "non_null_count": 548003,
+          "non_null_count": 550381,
           "exact_values": [
             "",
             "AMPLE:N",
@@ -2618,12 +2619,12 @@
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 1204,
-          "non_null_count": 496336
+          "non_null_count": 498278
         }
       ],
       "business_facts": {
         "tracked_skus": 1543,
-        "total_inventory_units": 4648
+        "total_inventory_units": 4538
       }
     },
     "platform_sku_mapping": {
@@ -2692,29 +2693,29 @@
     },
     "shopify_orders": {
       "table": "shopify_orders",
-      "row_count": 1949,
+      "row_count": 1950,
       "total_columns": 79,
       "columns": [
         {
           "name": "name",
           "type": "String",
           "annotation": "",
-          "unique_count": 1287,
-          "non_null_count": 1949
+          "unique_count": 1288,
+          "non_null_count": 1950
         },
         {
           "name": "email",
           "type": "Nullable(String)",
           "annotation": "",
-          "unique_count": 1051,
-          "non_null_count": 1949
+          "unique_count": 1052,
+          "non_null_count": 1950
         },
         {
           "name": "financial_status",
           "type": "LowCardinality(Nullable(String))",
           "annotation": "",
           "unique_count": 3,
-          "non_null_count": 1949,
+          "non_null_count": 1950,
           "exact_values": [
             "paid",
             "partially_refunded",
@@ -2726,11 +2727,11 @@
           "name": "paid_at",
           "type": "DateTime64(3, 'Asia/Kolkata')",
           "annotation": "",
-          "unique_count": 1287,
-          "non_null_count": 1949,
+          "unique_count": 1288,
+          "non_null_count": 1950,
           "date_range": {
             "min": "2025-01-01 11:13:59.000",
-            "max": "2026-05-19 08:17:30.000"
+            "max": "2026-05-21 10:55:54.000"
           }
         },
         {
@@ -2738,7 +2739,7 @@
           "type": "LowCardinality(Nullable(String))",
           "annotation": "",
           "unique_count": 2,
-          "non_null_count": 1949,
+          "non_null_count": 1950,
           "exact_values": [
             "fulfilled",
             "unfulfilled"
@@ -2749,11 +2750,11 @@
           "name": "fulfilled_at",
           "type": "Nullable(DateTime64(3, 'Asia/Kolkata'))",
           "annotation": "",
-          "unique_count": 785,
-          "non_null_count": 1903,
+          "unique_count": 788,
+          "non_null_count": 1908,
           "date_range": {
             "min": "2025-01-02 11:16:00.000",
-            "max": "2026-05-19 10:48:56.000"
+            "max": "2026-05-21 18:49:20.000"
           }
         },
         {
@@ -2761,7 +2762,7 @@
           "type": "LowCardinality(Nullable(String))",
           "annotation": "",
           "unique_count": 2,
-          "non_null_count": 1949,
+          "non_null_count": 1950,
           "exact_values": [
             "no",
             "yes"
@@ -2773,7 +2774,7 @@
           "type": "LowCardinality(Nullable(String))",
           "annotation": "",
           "unique_count": 1,
-          "non_null_count": 1949,
+          "non_null_count": 1950,
           "constant_value": "INR",
           "is_constant": true
         },
@@ -2782,11 +2783,11 @@
           "type": "Nullable(Float32)",
           "annotation": "",
           "unique_count": 544,
-          "non_null_count": 1949,
+          "non_null_count": 1950,
           "numerical_range": {
             "min": 1.0,
             "max": 12741.5,
-            "avg": 2489.91
+            "avg": 2489.43
           }
         },
         {
@@ -2794,7 +2795,7 @@
           "type": "Nullable(Float32)",
           "annotation": "",
           "unique_count": 1,
-          "non_null_count": 1949,
+          "non_null_count": 1950,
           "constant_value": "0.0",
           "is_constant": true
         },
@@ -2803,11 +2804,11 @@
           "type": "Nullable(Float32)",
           "annotation": "",
           "unique_count": 604,
-          "non_null_count": 1949,
+          "non_null_count": 1950,
           "numerical_range": {
             "min": 0.0,
             "max": 1943.6199951171875,
-            "avg": 390.51
+            "avg": 390.48
           }
         },
         {
@@ -2815,11 +2816,11 @@
           "type": "Nullable(Float32)",
           "annotation": "",
           "unique_count": 544,
-          "non_null_count": 1949,
+          "non_null_count": 1950,
           "numerical_range": {
             "min": 1.0,
             "max": 12741.5,
-            "avg": 2489.91
+            "avg": 2489.43
           }
         },
         {
@@ -2985,11 +2986,11 @@
           "type": "Nullable(Float32)",
           "annotation": "",
           "unique_count": 279,
-          "non_null_count": 1949,
+          "non_null_count": 1950,
           "numerical_range": {
             "min": 0.0,
             "max": 8748.0,
-            "avg": 304.55
+            "avg": 304.39
           }
         },
         {
@@ -2997,7 +2998,7 @@
           "type": "LowCardinality(Nullable(String))",
           "annotation": "",
           "unique_count": 2,
-          "non_null_count": 1892,
+          "non_null_count": 1893,
           "exact_values": [
             "Standard Custom Shipping",
             "Standard Shipping"
@@ -3008,11 +3009,11 @@
           "name": "created_at",
           "type": "DateTime64(3, 'Asia/Kolkata')",
           "annotation": "",
-          "unique_count": 1287,
-          "non_null_count": 1949,
+          "unique_count": 1288,
+          "non_null_count": 1950,
           "date_range": {
             "min": "2025-01-01 11:13:58.000",
-            "max": "2026-05-19 08:17:30.000"
+            "max": "2026-05-21 10:55:53.000"
           }
         },
         {
@@ -3020,7 +3021,7 @@
           "type": "Nullable(Int32)",
           "annotation": "",
           "unique_count": 7,
-          "non_null_count": 1949,
+          "non_null_count": 1950,
           "exact_values": [
             "1",
             "10",
@@ -3037,14 +3038,14 @@
           "type": "String",
           "annotation": "",
           "unique_count": 290,
-          "non_null_count": 1949
+          "non_null_count": 1950
         },
         {
           "name": "lineitem_price",
           "type": "Nullable(Float32)",
           "annotation": "",
           "unique_count": 182,
-          "non_null_count": 1949,
+          "non_null_count": 1950,
           "exact_values": [
             "0.0",
             "1045.5",
@@ -3289,14 +3290,14 @@
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 289,
-          "non_null_count": 1949
+          "non_null_count": 1950
         },
         {
           "name": "lineitem_requires_shipping",
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 1,
-          "non_null_count": 1949,
+          "non_null_count": 1950,
           "constant_value": "True",
           "is_constant": true
         },
@@ -3305,7 +3306,7 @@
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 1,
-          "non_null_count": 1949,
+          "non_null_count": 1950,
           "constant_value": "True",
           "is_constant": true
         },
@@ -3314,7 +3315,7 @@
           "type": "LowCardinality(Nullable(String))",
           "annotation": "",
           "unique_count": 2,
-          "non_null_count": 1949,
+          "non_null_count": 1950,
           "exact_values": [
             "fulfilled",
             "pending"
@@ -3325,36 +3326,36 @@
           "name": "billing_name",
           "type": "Nullable(String)",
           "annotation": "",
-          "unique_count": 1088,
-          "non_null_count": 1949
+          "unique_count": 1089,
+          "non_null_count": 1950
         },
         {
           "name": "billing_street",
           "type": "Nullable(String)",
           "annotation": "",
-          "unique_count": 1108,
-          "non_null_count": 1947
+          "unique_count": 1109,
+          "non_null_count": 1948
         },
         {
           "name": "billing_address1",
           "type": "Nullable(String)",
           "annotation": "",
-          "unique_count": 1087,
-          "non_null_count": 1914
+          "unique_count": 1088,
+          "non_null_count": 1915
         },
         {
           "name": "billing_address2",
           "type": "Nullable(String)",
           "annotation": "",
-          "unique_count": 568,
-          "non_null_count": 1043
+          "unique_count": 569,
+          "non_null_count": 1044
         },
         {
           "name": "billing_company",
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 4,
-          "non_null_count": 1572,
+          "non_null_count": 1573,
           "exact_values": [
             "",
             "HOME",
@@ -3368,21 +3369,21 @@
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 349,
-          "non_null_count": 1947
+          "non_null_count": 1948
         },
         {
           "name": "billing_zip",
           "type": "Nullable(String)",
           "annotation": "",
-          "unique_count": 701,
-          "non_null_count": 1947
+          "unique_count": 702,
+          "non_null_count": 1948
         },
         {
           "name": "billing_province",
           "type": "LowCardinality(Nullable(String))",
           "annotation": "",
           "unique_count": 34,
-          "non_null_count": 1947,
+          "non_null_count": 1948,
           "exact_values": [
             "AN",
             "AP",
@@ -3426,7 +3427,7 @@
           "type": "LowCardinality(Nullable(String))",
           "annotation": "",
           "unique_count": 1,
-          "non_null_count": 1947,
+          "non_null_count": 1948,
           "constant_value": "IN",
           "is_constant": true
         },
@@ -3434,43 +3435,43 @@
           "name": "billing_phone",
           "type": "Nullable(String)",
           "annotation": "",
-          "unique_count": 1137,
-          "non_null_count": 1947
+          "unique_count": 1138,
+          "non_null_count": 1948
         },
         {
           "name": "shipping_name",
           "type": "Nullable(String)",
           "annotation": "",
-          "unique_count": 1088,
-          "non_null_count": 1949
+          "unique_count": 1089,
+          "non_null_count": 1950
         },
         {
           "name": "shipping_street",
           "type": "Nullable(String)",
           "annotation": "",
-          "unique_count": 1110,
-          "non_null_count": 1949
+          "unique_count": 1111,
+          "non_null_count": 1950
         },
         {
           "name": "shipping_address1",
           "type": "Nullable(String)",
           "annotation": "",
-          "unique_count": 1090,
-          "non_null_count": 1919
+          "unique_count": 1091,
+          "non_null_count": 1920
         },
         {
           "name": "shipping_address2",
           "type": "Nullable(String)",
           "annotation": "",
-          "unique_count": 568,
-          "non_null_count": 1045
+          "unique_count": 569,
+          "non_null_count": 1046
         },
         {
           "name": "shipping_company",
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 4,
-          "non_null_count": 1572,
+          "non_null_count": 1573,
           "exact_values": [
             "",
             "HOME",
@@ -3484,21 +3485,21 @@
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 348,
-          "non_null_count": 1949
+          "non_null_count": 1950
         },
         {
           "name": "shipping_zip",
           "type": "Nullable(String)",
           "annotation": "",
-          "unique_count": 700,
-          "non_null_count": 1949
+          "unique_count": 701,
+          "non_null_count": 1950
         },
         {
           "name": "shipping_province",
           "type": "LowCardinality(Nullable(String))",
           "annotation": "",
           "unique_count": 34,
-          "non_null_count": 1949,
+          "non_null_count": 1950,
           "exact_values": [
             "AN",
             "AP",
@@ -3542,7 +3543,7 @@
           "type": "LowCardinality(Nullable(String))",
           "annotation": "",
           "unique_count": 1,
-          "non_null_count": 1949,
+          "non_null_count": 1950,
           "constant_value": "IN",
           "is_constant": true
         },
@@ -3550,15 +3551,15 @@
           "name": "shipping_phone",
           "type": "Nullable(String)",
           "annotation": "",
-          "unique_count": 1140,
-          "non_null_count": 1949
+          "unique_count": 1141,
+          "non_null_count": 1950
         },
         {
           "name": "notes",
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 17,
-          "non_null_count": 355,
+          "non_null_count": 356,
           "exact_values": [
             "",
             "Can you pls add samples",
@@ -3627,7 +3628,7 @@
           "type": "LowCardinality(Nullable(String))",
           "annotation": "",
           "unique_count": 5,
-          "non_null_count": 1949,
+          "non_null_count": 1950,
           "exact_values": [
             "01. Razorpay UPI, Cards, Wallets",
             "1Razorpay - UPI, Cards, Wallets, NB",
@@ -3641,15 +3642,15 @@
           "name": "payment_reference",
           "type": "Nullable(String)",
           "annotation": "",
-          "unique_count": 1287,
-          "non_null_count": 1949
+          "unique_count": 1288,
+          "non_null_count": 1950
         },
         {
           "name": "refunded_amount",
           "type": "Nullable(Float32)",
           "annotation": "",
           "unique_count": 66,
-          "non_null_count": 1949,
+          "non_null_count": 1950,
           "exact_values": [
             "0.0",
             "1050.0",
@@ -3725,7 +3726,7 @@
           "type": "LowCardinality(Nullable(String))",
           "annotation": "",
           "unique_count": 17,
-          "non_null_count": 1949,
+          "non_null_count": 1950,
           "exact_values": [
             "By Wishtrend",
             "CIC",
@@ -3752,7 +3753,7 @@
           "type": "Nullable(Float32)",
           "annotation": "",
           "unique_count": 1,
-          "non_null_count": 1949,
+          "non_null_count": 1950,
           "constant_value": "0.0",
           "is_constant": true
         },
@@ -3761,7 +3762,7 @@
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 3,
-          "non_null_count": 817,
+          "non_null_count": 818,
           "exact_values": [
             "",
             "Hetvi Gandhi",
@@ -3787,22 +3788,22 @@
           "name": "id",
           "type": "Nullable(String)",
           "annotation": "",
-          "unique_count": 1287,
-          "non_null_count": 1949
+          "unique_count": 1288,
+          "non_null_count": 1950
         },
         {
           "name": "tags",
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 873,
-          "non_null_count": 1617
+          "non_null_count": 1618
         },
         {
           "name": "risk_level",
           "type": "LowCardinality(Nullable(String))",
           "annotation": "",
           "unique_count": 2,
-          "non_null_count": 1949,
+          "non_null_count": 1950,
           "exact_values": [
             "Low",
             "Medium"
@@ -3814,7 +3815,7 @@
           "type": "LowCardinality(Nullable(String))",
           "annotation": "",
           "unique_count": 3,
-          "non_null_count": 1949,
+          "non_null_count": 1950,
           "exact_values": [
             "Created by Shopflo",
             "shopify_draft_order",
@@ -3827,7 +3828,7 @@
           "type": "Nullable(Float32)",
           "annotation": "",
           "unique_count": 3,
-          "non_null_count": 1949,
+          "non_null_count": 1950,
           "exact_values": [
             "0.0",
             "64.12000274658203",
@@ -3840,7 +3841,7 @@
           "type": "LowCardinality(Nullable(String))",
           "annotation": "",
           "unique_count": 2,
-          "non_null_count": 1892,
+          "non_null_count": 1893,
           "exact_values": [
             "CGST 9%",
             "IGST 18%"
@@ -3852,31 +3853,28 @@
           "type": "Nullable(Float32)",
           "annotation": "",
           "unique_count": 602,
-          "non_null_count": 1892,
+          "non_null_count": 1893,
           "numerical_range": {
             "min": 0.07000000029802322,
             "max": 1943.6199951171875,
-            "avg": 350.7
+            "avg": 350.57
           }
         },
         {
           "name": "tax_2_name",
           "type": "LowCardinality(Nullable(String))",
           "annotation": "",
-          "unique_count": 2,
-          "non_null_count": 283,
-          "exact_values": [
-            "",
-            "SGST 18%"
-          ],
-          "is_categorical": true
+          "unique_count": 1,
+          "non_null_count": 264,
+          "constant_value": "None",
+          "is_constant": true
         },
         {
           "name": "tax_2_value",
           "type": "Nullable(Float32)",
           "annotation": "",
           "unique_count": 122,
-          "non_null_count": 263,
+          "non_null_count": 264,
           "exact_values": [
             "0.14000000059604645",
             "102.05000305175781",
@@ -4008,7 +4006,7 @@
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 1,
-          "non_null_count": 1949,
+          "non_null_count": 1950,
           "constant_value": "",
           "is_constant": true
         },
@@ -4024,7 +4022,7 @@
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 1,
-          "non_null_count": 1949,
+          "non_null_count": 1950,
           "constant_value": "",
           "is_constant": true
         },
@@ -4040,7 +4038,7 @@
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 1,
-          "non_null_count": 1949,
+          "non_null_count": 1950,
           "constant_value": "",
           "is_constant": true
         },
@@ -4077,7 +4075,7 @@
           "type": "LowCardinality(Nullable(String))",
           "annotation": "",
           "unique_count": 34,
-          "non_null_count": 1947,
+          "non_null_count": 1948,
           "exact_values": [
             "Andaman and Nicobar Islands",
             "Andhra Pradesh",
@@ -4121,7 +4119,7 @@
           "type": "LowCardinality(Nullable(String))",
           "annotation": "",
           "unique_count": 34,
-          "non_null_count": 1949,
+          "non_null_count": 1950,
           "exact_values": [
             "Andaman and Nicobar Islands",
             "Andhra Pradesh",
@@ -4164,15 +4162,15 @@
           "name": "payment_id",
           "type": "Nullable(String)",
           "annotation": "",
-          "unique_count": 1287,
-          "non_null_count": 1949
+          "unique_count": 1288,
+          "non_null_count": 1950
         },
         {
           "name": "payment_terms_name",
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 1,
-          "non_null_count": 1949,
+          "non_null_count": 1950,
           "constant_value": "",
           "is_constant": true
         },
@@ -4187,50 +4185,50 @@
           "name": "payment_references",
           "type": "Nullable(String)",
           "annotation": "",
-          "unique_count": 1288,
-          "non_null_count": 1949
+          "unique_count": 1289,
+          "non_null_count": 1950
         }
       ]
     },
     "unicomm_sales_final": {
       "table": "unicomm_sales_final",
-      "row_count": 314939,
+      "row_count": 315053,
       "total_columns": 78,
       "columns": [
         {
           "name": "order_id",
           "type": "String",
           "annotation": "",
-          "unique_count": 201446,
-          "non_null_count": 314939
+          "unique_count": 201524,
+          "non_null_count": 315053
         },
         {
           "name": "order_display_order_no",
           "type": "Nullable(String)",
           "annotation": "",
-          "unique_count": 196027,
-          "non_null_count": 314723
+          "unique_count": 196107,
+          "non_null_count": 314837
         },
         {
           "name": "uniware_created_at",
           "type": "DateTime",
           "annotation": "",
-          "unique_count": 190158,
-          "non_null_count": 314939,
+          "unique_count": 190260,
+          "non_null_count": 315053,
           "date_range": {
             "min": "1970-01-01 05:30:00",
-            "max": "2026-05-20 05:20:50"
+            "max": "2026-05-22 05:24:50"
           }
         },
         {
           "name": "channel_created_at",
           "type": "DateTime",
           "annotation": "",
-          "unique_count": 198682,
-          "non_null_count": 314939,
+          "unique_count": 198769,
+          "non_null_count": 315053,
           "date_range": {
             "min": "1970-01-01 05:30:00",
-            "max": "2026-05-20 05:19:58"
+            "max": "2026-05-22 05:24:45"
           }
         },
         {
@@ -4238,7 +4236,7 @@
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 18,
-          "non_null_count": 314938,
+          "non_null_count": 315052,
           "exact_values": [
             "AMAZON_FBM",
             "AMAZON_IN",
@@ -4266,7 +4264,7 @@
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 3,
-          "non_null_count": 314938,
+          "non_null_count": 315052,
           "exact_values": [
             "CANCELLED",
             "COMPLETE",
@@ -4279,7 +4277,7 @@
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 1,
-          "non_null_count": 314938,
+          "non_null_count": 315052,
           "constant_value": "STD",
           "is_constant": true
         },
@@ -4288,7 +4286,7 @@
           "type": "Nullable(UInt8)",
           "annotation": "",
           "unique_count": 3,
-          "non_null_count": 314938,
+          "non_null_count": 315052,
           "exact_values": [
             "0",
             "1",
@@ -4301,7 +4299,7 @@
           "type": "Nullable(Enum8('No' = 0, 'Yes' = 1))",
           "annotation": "",
           "unique_count": 1,
-          "non_null_count": 314938,
+          "non_null_count": 315052,
           "constant_value": "No",
           "is_constant": true
         },
@@ -4310,7 +4308,7 @@
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 1,
-          "non_null_count": 314938,
+          "non_null_count": 315052,
           "constant_value": "********",
           "is_constant": true
         },
@@ -4319,7 +4317,7 @@
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 1,
-          "non_null_count": 310330,
+          "non_null_count": 310444,
           "constant_value": "********",
           "is_constant": true
         },
@@ -4328,8 +4326,8 @@
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 1,
-          "non_null_count": 166441,
-          "constant_value": "********",
+          "non_null_count": 166442,
+          "constant_value": "None",
           "is_constant": true
         },
         {
@@ -4337,7 +4335,7 @@
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 1,
-          "non_null_count": 314938,
+          "non_null_count": 315052,
           "constant_value": "-",
           "is_constant": true
         },
@@ -4346,7 +4344,7 @@
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 2,
-          "non_null_count": 314938,
+          "non_null_count": 315052,
           "exact_values": [
             "COD",
             "PREPAID"
@@ -4358,45 +4356,45 @@
           "type": "Nullable(Float64)",
           "annotation": "",
           "unique_count": 19074,
-          "non_null_count": 314938,
+          "non_null_count": 315052,
           "numerical_range": {
             "min": 0.0,
             "max": 4097950.0,
-            "avg": 108606.93
+            "avg": 108567.89
           }
         },
         {
           "name": "sku",
           "type": "String",
           "annotation": "",
-          "unique_count": 1993,
-          "non_null_count": 314939
+          "unique_count": 1996,
+          "non_null_count": 315053
         },
         {
           "name": "item_price",
           "type": "Nullable(Float64)",
           "annotation": "",
           "unique_count": 18396,
-          "non_null_count": 314938,
+          "non_null_count": 315052,
           "numerical_range": {
             "min": 0.0,
             "max": 55377.7,
-            "avg": 2129.52
+            "avg": 2128.99
           }
         },
         {
           "name": "product_id",
           "type": "Nullable(String)",
           "annotation": "",
-          "unique_count": 996,
-          "non_null_count": 214860
+          "unique_count": 998,
+          "non_null_count": 214973
         },
         {
           "name": "qty",
           "type": "UInt64",
           "annotation": "",
           "unique_count": 142,
-          "non_null_count": 314939,
+          "non_null_count": 315053,
           "exact_values": [
             "1",
             "10",
@@ -4547,25 +4545,25 @@
           "name": "shipment_id",
           "type": "String",
           "annotation": "",
-          "unique_count": 32749,
-          "non_null_count": 314939
+          "unique_count": 32766,
+          "non_null_count": 315053
         },
         {
           "name": "shipment_code",
           "type": "Nullable(String)",
           "annotation": "",
-          "unique_count": 32748,
-          "non_null_count": 39104
+          "unique_count": 32765,
+          "non_null_count": 39121
         },
         {
           "name": "shipment_created_at",
           "type": "DateTime64(3)",
           "annotation": "",
-          "unique_count": 32377,
-          "non_null_count": 314939,
+          "unique_count": 32394,
+          "non_null_count": 315053,
           "date_range": {
             "min": "1970-01-01 05:30:00.000",
-            "max": "2026-05-19 23:50:50.000"
+            "max": "2026-05-20 13:28:00.000"
           }
         },
         {
@@ -4573,7 +4571,7 @@
           "type": "DateTime64(3)",
           "annotation": "",
           "unique_count": 85,
-          "non_null_count": 314939,
+          "non_null_count": 315053,
           "exact_values": [
             "1970-01-01 05:30:00+05:30",
             "2025-10-06 00:00:00+05:30",
@@ -4672,7 +4670,7 @@
           "type": "Nullable(DateTime64(3))",
           "annotation": "",
           "unique_count": 1964,
-          "non_null_count": 39104,
+          "non_null_count": 39121,
           "date_range": {
             "min": "2025-01-02 12:00:00.000",
             "max": "2026-05-20 14:00:00.000"
@@ -4682,8 +4680,8 @@
           "name": "dispatch_time",
           "type": "Nullable(DateTime64(3))",
           "annotation": "",
-          "unique_count": 3411,
-          "non_null_count": 36342,
+          "unique_count": 3425,
+          "non_null_count": 36358,
           "date_range": {
             "min": "2025-01-01 14:34:52.000",
             "max": "2026-05-21 03:46:10.000"
@@ -4708,7 +4706,7 @@
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 2,
-          "non_null_count": 39104,
+          "non_null_count": 39121,
           "exact_values": [
             "false",
             "true"
@@ -4720,14 +4718,14 @@
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 570,
-          "non_null_count": 39104
+          "non_null_count": 39121
         },
         {
           "name": "shipment_channel",
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 5,
-          "non_null_count": 39104,
+          "non_null_count": 39121,
           "exact_values": [
             "CUSTOM_BOTERA",
             "KOLHASIA_MYNTRAPPMP",
@@ -4742,7 +4740,7 @@
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 9,
-          "non_null_count": 39104,
+          "non_null_count": 39121,
           "exact_values": [
             "CREATED",
             "DELIVERED",
@@ -4761,7 +4759,7 @@
           "type": "Nullable(UInt8)",
           "annotation": "",
           "unique_count": 2,
-          "non_null_count": 39104,
+          "non_null_count": 39121,
           "exact_values": [
             "0",
             "2"
@@ -4772,23 +4770,23 @@
           "name": "picklist",
           "type": "Nullable(String)",
           "annotation": "",
-          "unique_count": 1794,
-          "non_null_count": 36338
+          "unique_count": 1797,
+          "non_null_count": 36355
         },
         {
           "name": "invoice_no",
           "type": "Nullable(String)",
           "annotation": "",
-          "unique_count": 32555,
-          "non_null_count": 38557
+          "unique_count": 32572,
+          "non_null_count": 38574
         },
         {
           "name": "shipment_on_hold",
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 1,
-          "non_null_count": 39104,
-          "constant_value": "No",
+          "non_null_count": 39121,
+          "constant_value": "None",
           "is_constant": true
         },
         {
@@ -4796,7 +4794,7 @@
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 34,
-          "non_null_count": 39104,
+          "non_null_count": 39121,
           "exact_values": [
             "Andhra Pradesh",
             "Arunachal Pradesh",
@@ -4858,15 +4856,15 @@
           "name": "shipping",
           "type": "Nullable(String)",
           "annotation": "",
-          "unique_count": 32039,
-          "non_null_count": 36462
+          "unique_count": 32056,
+          "non_null_count": 36479
         },
         {
           "name": "shipment_payment_method",
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 2,
-          "non_null_count": 39104,
+          "non_null_count": 39121,
           "exact_values": [
             "COD",
             "PREPAID"
@@ -4891,15 +4889,15 @@
           "name": "shipment_display_order_no",
           "type": "Nullable(String)",
           "annotation": "",
-          "unique_count": 32748,
-          "non_null_count": 39104
+          "unique_count": 32765,
+          "non_null_count": 39121
         },
         {
           "name": "contains_gift_wrap",
           "type": "Nullable(UInt8)",
           "annotation": "",
           "unique_count": 3,
-          "non_null_count": 39104,
+          "non_null_count": 39121,
           "exact_values": [
             "0",
             "1",
@@ -4912,7 +4910,7 @@
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 5,
-          "non_null_count": 39104,
+          "non_null_count": 39121,
           "exact_values": [
             "CUSTOM_BOTERA",
             "KOLHASIA_MYNTRAPPMP",
@@ -4927,7 +4925,7 @@
           "type": "Nullable(UInt64)",
           "annotation": "",
           "unique_count": 5,
-          "non_null_count": 39104,
+          "non_null_count": 39121,
           "exact_values": [
             "11414",
             "6832",
@@ -4942,42 +4940,42 @@
           "type": "String",
           "annotation": "",
           "unique_count": 664,
-          "non_null_count": 314939
+          "non_null_count": 315053
         },
         {
           "name": "seller_sku",
           "type": "String",
           "annotation": "",
           "unique_count": 944,
-          "non_null_count": 314939
+          "non_null_count": 315053
         },
         {
           "name": "item_type_ids",
           "type": "Nullable(String)",
           "annotation": "",
-          "unique_count": 2239,
-          "non_null_count": 39104
+          "unique_count": 2240,
+          "non_null_count": 39121
         },
         {
           "name": "item_id_details",
           "type": "Nullable(String)",
           "annotation": "",
-          "unique_count": 1960,
-          "non_null_count": 39104
+          "unique_count": 1961,
+          "non_null_count": 39121
         },
         {
           "name": "seller_sku_details",
           "type": "Nullable(String)",
           "annotation": "",
-          "unique_count": 2225,
-          "non_null_count": 39104
+          "unique_count": 2226,
+          "non_null_count": 39121
         },
         {
           "name": "shipping_provider",
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 12,
-          "non_null_count": 36465,
+          "non_null_count": 36482,
           "exact_values": [
             "ClickPost",
             "DELIVERY",
@@ -4999,7 +4997,7 @@
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 12,
-          "non_null_count": 36465,
+          "non_null_count": 36482,
           "exact_values": [
             "CLICKPOST",
             "DELIVERY",
@@ -5044,15 +5042,15 @@
           "name": "awb",
           "type": "Nullable(String)",
           "annotation": "",
-          "unique_count": 32039,
-          "non_null_count": 36462
+          "unique_count": 32056,
+          "non_null_count": 36479
         },
         {
           "name": "shipping_arranged_by",
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 2,
-          "non_null_count": 39104,
+          "non_null_count": 39121,
           "exact_values": [
             "CHANNEL",
             "UNIWARE"
@@ -5064,8 +5062,8 @@
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 1,
-          "non_null_count": 39104,
-          "constant_value": "None",
+          "non_null_count": 39121,
+          "constant_value": "false",
           "is_constant": true
         },
         {
@@ -5073,8 +5071,8 @@
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 1,
-          "non_null_count": 39104,
-          "constant_value": "None",
+          "non_null_count": 39121,
+          "constant_value": "PDF",
           "is_constant": true
         },
         {
@@ -5089,7 +5087,7 @@
           "type": "Nullable(UInt8)",
           "annotation": "",
           "unique_count": 1,
-          "non_null_count": 39104,
+          "non_null_count": 39121,
           "constant_value": "None",
           "is_constant": true
         },
@@ -5098,7 +5096,7 @@
           "type": "Nullable(UInt8)",
           "annotation": "",
           "unique_count": 2,
-          "non_null_count": 39104,
+          "non_null_count": 39121,
           "exact_values": [
             "0",
             "1"
@@ -5110,11 +5108,11 @@
           "type": "Nullable(Float64)",
           "annotation": "",
           "unique_count": 887,
-          "non_null_count": 39104,
+          "non_null_count": 39121,
           "numerical_range": {
             "min": 0.01,
             "max": 599700.0,
-            "avg": 4051.59
+            "avg": 4049.86
           }
         },
         {
@@ -5122,7 +5120,7 @@
           "type": "Nullable(Float64)",
           "annotation": "",
           "unique_count": 68,
-          "non_null_count": 39104,
+          "non_null_count": 39121,
           "exact_values": [
             "0.0",
             "1.0",
@@ -5200,7 +5198,7 @@
           "type": "Nullable(Float64)",
           "annotation": "",
           "unique_count": 62,
-          "non_null_count": 39104,
+          "non_null_count": 39121,
           "exact_values": [
             "0.0",
             "1.0",
@@ -5272,7 +5270,7 @@
           "type": "Nullable(Float64)",
           "annotation": "",
           "unique_count": 79,
-          "non_null_count": 39104,
+          "non_null_count": 39121,
           "exact_values": [
             "0.0",
             "1.0",
@@ -5361,7 +5359,7 @@
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 1,
-          "non_null_count": 39104,
+          "non_null_count": 39121,
           "constant_value": "None",
           "is_constant": true
         },
@@ -5370,7 +5368,7 @@
           "type": "Nullable(UInt8)",
           "annotation": "",
           "unique_count": 2,
-          "non_null_count": 39104,
+          "non_null_count": 39121,
           "exact_values": [
             "1",
             "2"
@@ -5382,7 +5380,7 @@
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 2,
-          "non_null_count": 39104,
+          "non_null_count": 39121,
           "exact_values": [
             "OFF",
             "SKIP_INVOICE_URL"
@@ -5393,15 +5391,15 @@
           "name": "order_item_ids",
           "type": "Nullable(String)",
           "annotation": "",
-          "unique_count": 32748,
-          "non_null_count": 39104
+          "unique_count": 32765,
+          "non_null_count": 39121
         },
         {
           "name": "shipping_package_type_scannable_source",
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 1,
-          "non_null_count": 39104,
+          "non_null_count": 39121,
           "constant_value": "None",
           "is_constant": true
         },
@@ -5410,7 +5408,7 @@
           "type": "String",
           "annotation": "",
           "unique_count": 1,
-          "non_null_count": 314939,
+          "non_null_count": 315053,
           "constant_value": "Unicommerce",
           "is_constant": true
         },
@@ -5419,14 +5417,14 @@
           "type": "Nullable(String)",
           "annotation": "",
           "unique_count": 939,
-          "non_null_count": 292216
+          "non_null_count": 292291
         },
         {
           "name": "mrp",
           "type": "Nullable(Float64)",
           "annotation": "",
           "unique_count": 130,
-          "non_null_count": 273435,
+          "non_null_count": 273510,
           "exact_values": [
             "100.0",
             "1050.0",
@@ -5566,11 +5564,11 @@
           "type": "Nullable(Float64)",
           "annotation": "",
           "unique_count": 30032,
-          "non_null_count": 314938,
+          "non_null_count": 315052,
           "numerical_range": {
             "min": 0.0,
             "max": 47480.41,
-            "avg": 1549.51
+            "avg": 1549.19
           }
         },
         {
@@ -5578,11 +5576,11 @@
           "type": "Nullable(Float64)",
           "annotation": "",
           "unique_count": 57667,
-          "non_null_count": 314938,
+          "non_null_count": 315052,
           "numerical_range": {
             "min": 0.0,
             "max": 4042572.3,
-            "avg": 24478.46
+            "avg": 24469.85
           }
         },
         {
@@ -5590,7 +5588,7 @@
           "type": "UInt8",
           "annotation": "",
           "unique_count": 2,
-          "non_null_count": 314939,
+          "non_null_count": 315053,
           "exact_values": [
             "0",
             "1"
@@ -5602,11 +5600,11 @@
           "type": "UInt64",
           "annotation": "",
           "unique_count": 224,
-          "non_null_count": 314939,
+          "non_null_count": 315053,
           "numerical_range": {
             "min": 1.0,
             "max": 9206.0,
-            "avg": 32.27
+            "avg": 32.26
           }
         },
         {
@@ -5614,23 +5612,23 @@
           "type": "Nullable(Float64)",
           "annotation": "",
           "unique_count": 7750,
-          "non_null_count": 314939,
+          "non_null_count": 315053,
           "numerical_range": {
             "min": 0.0,
             "max": 10102880.0,
-            "avg": 37201.32
+            "avg": 37188.26
           }
         },
         {
           "name": "total_allocated_to_mrp",
           "type": "Nullable(Float64)",
           "annotation": "",
-          "unique_count": 18755,
-          "non_null_count": 314939,
+          "unique_count": 18758,
+          "non_null_count": 315053,
           "numerical_range": {
             "min": 0.0,
             "max": 4097950.0,
-            "avg": 108202.62
+            "avg": 108163.64
           }
         }
       ]
@@ -9505,7 +9503,7 @@
           "annotation": "",
           "unique_count": 1,
           "non_null_count": 125717,
-          "constant_value": "None",
+          "constant_value": "Manual Shipment",
           "is_constant": true
         },
         {
@@ -9545,7 +9543,7 @@
           "annotation": "",
           "unique_count": 1,
           "non_null_count": 125717,
-          "constant_value": "None",
+          "constant_value": "0.000",
           "is_constant": true
         },
         {
