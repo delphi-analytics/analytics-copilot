@@ -13,7 +13,7 @@ from langgraph.pregel import Pregel
 from backend.agent.state import AnalyticsState
 from backend.agent.nodes import (
     intent, schema, sql_gen, executor,
-    analyst, viz_config, responder
+    analyst, viz_config, responder, general_llm, disambiguate
 )
 from backend.agent.nodes.insight_followup import handle_insight_followup, _is_insight_followup
 import structlog
@@ -30,6 +30,16 @@ class StreamingGraphRunner:
             "progress": 10,
             "message": "Understanding your question...",
             "description": "Analyzing what you're asking for"
+        },
+        "disambiguate": {
+            "progress": 15,
+            "message": "Clarifying ambiguous terms...",
+            "description": "Checking if any terms need clarification"
+        },
+        "general_llm": {
+            "progress": 50,
+            "message": "Generating response...",
+            "description": "Formulating a conversational answer"
         },
         "discover_schema": {
             "progress": 25,
@@ -146,6 +156,14 @@ class StreamingGraphRunner:
             self._wrap_node(intent.understand_intent, "understand_intent")
         )
         graph.add_node(
+            "disambiguate",
+            self._wrap_node(disambiguate.disambiguate, "disambiguate")
+        )
+        graph.add_node(
+            "general_llm",
+            self._wrap_node(general_llm.handle_general_query, "general_llm")
+        )
+        graph.add_node(
             "discover_schema",
             self._wrap_node(schema.discover_schema, "discover_schema")
         )
@@ -191,18 +209,35 @@ class StreamingGraphRunner:
             if intent_type == "analytical_question":
                 return "generate_sql"
 
-            if intent_type in ("greeting", "off_topic", "export_request"):
+            if intent_type in ("greeting", "conversational", "off_topic"):
+                return "general_llm"
+
+            if intent_type == "export_request":
                 return "skip_to_respond"
 
             return "generate_sql"
+
+        def _after_disambiguate(state: AnalyticsState) -> str:
+            if state.get("skip_pipeline"):
+                return "skip_to_respond"
+            return "discover_schema"
 
         graph.add_conditional_edges(
             "understand_intent",
             _should_skip_sql,
             {
-                "generate_sql": "discover_schema",
+                "generate_sql": "disambiguate",
                 "skip_to_respond": "compose_response",
                 "insight_followup": "insight_followup",
+                "general_llm": "general_llm",
+            }
+        )
+        graph.add_conditional_edges(
+            "disambiguate",
+            _after_disambiguate,
+            {
+                "discover_schema": "discover_schema",
+                "skip_to_respond": "compose_response",
             }
         )
         graph.add_edge("discover_schema", "generate_sql")
@@ -211,6 +246,7 @@ class StreamingGraphRunner:
         graph.add_edge("analyze_insights", "generate_viz_config")
         graph.add_edge("generate_viz_config", "compose_response")
         graph.add_edge("insight_followup", "compose_response")
+        graph.add_edge("general_llm", "compose_response")
         graph.add_edge("compose_response", "__end__")
 
         return graph.compile()
@@ -247,12 +283,20 @@ class StreamingGraphRunner:
         self.set_progress_callback(progress_callback)
 
         try:
-            # Run the graph
-            final_state = await self.graph.ainvoke(initial_state)
+            # Run the graph using astream so we can yield updates in real-time
+            final_state = initial_state
+            async for output in self.graph.astream(initial_state):
+                # Drain and yield any progress events generated during this node's execution
+                while progress_queue:
+                    yield progress_queue.pop(0)
+                
+                # Keep track of the latest state
+                for node_name, state in output.items():
+                    final_state = state
 
-            # Emit any queued progress updates
-            for update in progress_queue:
-                yield update
+            # Emit any remaining queued progress updates
+            while progress_queue:
+                yield progress_queue.pop(0)
 
             # Final result
             total_ms = int((time.perf_counter() - t0) * 1000)

@@ -218,17 +218,16 @@ Return JSON:
 Keep insights actionable and business-focused. Use specific numbers from the data.
 
 CRITICAL REASONING & CONTENT RULES:
-1. If the user asks for "reasons", "causes", "factors", or "drivers" of a trend (decline/growth/change):
-   - Every single bullet point in the "insights" list MUST represent a specific, concrete reason, factor, or driver (e.g., specific platform drop, category decline, volume decrease, seasonal effect) based on the data.
-   - Do NOT just summarize the chart or repeat overall statistics. Answer the "why" or "what causes this" directly using the data points.
-
-CRITICAL FORMATTING RULES:
-1. Do NOT put digits, numbers, values, or dates in double quotes (e.g. do NOT write "2025-11" or "23.81").
-2. Instead, ALWAYS make all digits, percentages, monetary amounts, and dates BOLD using markdown asterisks (e.g., write **2025-11**, **₹23.81 Cr**, **30.2%**).
+1. DO NOT just read out or repeat the numbers from the data. That is useless.
+2. You MUST analyze the trend: identify peaks, troughs, overall direction (growth/decline), and significant month-over-month or period-over-period changes.
+3. Provide business justification or highlight the significance of the data pattern shown in the visualization. If a value drops significantly, call it out as an anomaly or point of interest.
+4. If the user asks for "reasons", "causes", "factors", or "drivers" of a trend (decline/growth/change):
+   - Every single bullet point in the "insights" list MUST represent a specific, concrete reason, factor, or driver based on the data.
+   - Answer the "why" directly using the data points.
 
 IMPORTANT: Use ₹ (Rupee) symbol ONLY for monetary values (Revenue, Sales, Spend, Profit).
 Do NOT use ₹ for counts (Orders, Units, Users, Tickets).
-Format large numbers in Indian style: e.g. ₹23.8 Cr (monetary), 2.8 L units (count)."""
+Format large numbers in Indian style: e.g. ₹23.8 Cr (monetary), 2.8 L units (count). Do NOT use markdown bolding (**) anywhere."""
 
     try:
         resp = await call_llm(
@@ -247,24 +246,10 @@ Format large numbers in Indian style: e.g. ₹23.8 Cr (monetary), 2.8 L units (c
         log.warning("analyst.parse_failed_using_dynamic_fallback", error=str(exc))
         analysis = _generate_rule_based_fallback_insights(rows, columns, basic_stats, question)
 
-    # Post-process to guarantee bolding on all numbers/dates and strip any double quotes
-    import re
+    # Clean up any leftover double quotes or stars from previous attempts
     cleaned_insights = []
     for ins in analysis.get("insights", []):
-        s = str(ins)
-        
-        def bold_unbolded_metrics(text: str) -> str:
-            parts = re.split(r'(\*\*.*?\*\*)', text)
-            for i in range(len(parts)):
-                if not parts[i].startswith('**'):
-                    # Bold dates: e.g., 2025-11 or 2025-01-01
-                    parts[i] = re.sub(r'\b(\d{4}-\d{2}(?:-\d{2})?)\b', r'**\1**', parts[i])
-                    # Bold currencies and units: e.g., ₹23.81 Cr, 17.99 L, 30.2%, 197.36
-                    parts[i] = re.sub(r'\b(₹?\d+(?:\.\d+)?(?:\s*(?:Cr|L|K|%))?)\b', r'**\1**', parts[i])
-            return "".join(parts)
-            
-        s = bold_unbolded_metrics(s)
-        s = s.replace('"', '').replace('****', '**')
+        s = str(ins).replace('"', '').replace('**', '')
         cleaned_insights.append(s)
 
     log.info("analyst.complete", insight_count=len(cleaned_insights))

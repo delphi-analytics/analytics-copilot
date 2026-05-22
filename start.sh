@@ -94,4 +94,5 @@ echo "  API Docs        → http://localhost:8001/docs"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-PYTHONPATH=. python -m uvicorn backend.main:app --host 0.0.0.0 --port 8001 --reload
+export PYTHONPATH=$PYTHONPATH:.
+python -m uvicorn backend.main:app --host 0.0.0.0 --port 8001 --reload

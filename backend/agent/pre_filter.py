@@ -46,6 +46,11 @@ def _get_greeting_response(question: str) -> dict:
             "# Good afternoon! 👋\n\nHow can I help you with your data today?",
             "# Good afternoon! ☀️\n\nWhat insights are you looking for?",
         ],
+        "how are you": [
+            "# I'm doing great, thank you! 🤖\n\nI'm fully operational and ready to crunch some numbers. How can I help you analyze your data today?",
+            "# I'm doing well! ✨\n\nAlways happy to help you discover insights in your business data. What would you like to explore?",
+            "# Fantastic, thanks for asking! 📊\n\nI've got all my circuits fired up and ready to analyze your sales and performance metrics. What's on your mind?",
+        ],
     }
 
     # Find the matching greeting type
@@ -92,59 +97,9 @@ def _get_greeting_response(question: str) -> dict:
 
 
 def _detect_off_topic(question: str) -> dict:
-    """Detect off-topic questions that are not related to business analytics."""
-    q = question.lower().strip()
-
-    # Keywords that indicate off-topic questions
-    off_topic_patterns = {
-        "weather": ["weather", "temperature", "rain", "sunny", "forecast", "climate"],
-        "time": ["what time", "current time", "what's the time"],
-        "news": ["news", "headlines", "latest news"],
-        "sports": ["cricket", "football", "match score", "game", "sports"],
-        "entertainment": ["movie", "song", "music", "actor", "actress"],
-        "general": ["tell me a joke", "meaning of life", "who are you", "what can you do", "how are you"],
-    }
-
-    # Check each pattern
-    for category, keywords in off_topic_patterns.items():
-        if any(keyword in q for keyword in keywords):
-            if category == "general":
-                # These should be handled conversationally
-                return {
-                    "type": "conversational",
-                    "confidence": 0.9,
-                    "skip_llm": False,  # Let responder handle these
-                }
-
-            # True off-topic - return specific response
-            off_topic_responses = [
-                f"I'm an analytics assistant focused on helping you explore your business data. "
-                f"I can't help with questions about **{category}**, but I'd love to help you analyze "
-                f"your sales, products, inventory, or customer metrics instead!",
-                f"That's outside my area of expertise. I'm here to help you analyze your business data - "
-                f"things like sales trends, product performance, and platform comparisons. "
-                f"Would you like to explore any of those instead?",
-            ]
-
-            return {
-                "type": "off_topic",
-                "confidence": 1.0,
-                "skip_llm": True,
-                "response": {
-                    "text": random.choice(off_topic_responses) + "\n\n**Try asking:**\n• Show revenue by platform\n• Top 10 products by sales\n• What's the trend for Nykaa this month?",
-                    "chart": None,
-                    "insights": [],
-                    "key_metrics": {},
-                    "follow_up_questions": [
-                        "Show me revenue by platform",
-                        "What are the top selling products?",
-                        "How is our business doing this month?"
-                    ],
-                    "viz_type": None,
-                    "row_count": 0,
-                }
-            }
-
+    """Detect off-topic questions that are not related to business analytics.
+    We now let the LLM handle these dynamically to give real answers instead of hard-blocks.
+    """
     return None
 
 
@@ -179,7 +134,9 @@ def pre_classify(question: str) -> dict:
         return off_topic_result
 
     # Detect obvious greetings
-    greeting_match = re.match(r"^(hi|hello|hey|gm|gn|good morning|good evening|good afternoon)\b[!.]*$", q)
+    # We strip any trailing punctuation like ? ! .
+    q_clean = re.sub(r'[?!.]+$', '', q).strip()
+    greeting_match = re.match(r"^(hi|hello|hey|gm|gn|good morning|good evening|good afternoon|how are you)$", q_clean)
     if greeting_match:
         return _get_greeting_response(question)
 

@@ -205,6 +205,9 @@ def create_app() -> FastAPI:
     async def startup() -> None:
         await init_db()
 
+        # Seed default admin user if users table is empty
+        await _seed_admin_user()
+
         # Demo SQLite datasource
         register_datasource("default", "sqlite", {"path": "./demo.db"})
         await _seed_demo_data()
@@ -253,6 +256,42 @@ def create_app() -> FastAPI:
             return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
 
     return app
+
+
+async def _seed_admin_user() -> None:
+    """Create a default admin user if no users exist in the database."""
+    from backend.database import AsyncSessionLocal as async_session_factory
+    from backend.models.user import User
+    from sqlalchemy import select, func
+
+    # Default credentials — change via Admin Panel after first login
+    DEFAULT_ADMIN_EMAIL = "admin@demo.com"
+    DEFAULT_ADMIN_PASSWORD = "admin123"
+    DEFAULT_ADMIN_NAME = "Admin"
+
+    try:
+        async with async_session_factory() as session:
+            result = await session.execute(select(func.count()).select_from(User))
+            count = result.scalar()
+            if count == 0:
+                admin = User(
+                    email=DEFAULT_ADMIN_EMAIL,
+                    name=DEFAULT_ADMIN_NAME,
+                    hashed_password=User.hash_password(DEFAULT_ADMIN_PASSWORD),
+                    role="admin",
+                    is_active=True,
+                )
+                session.add(admin)
+                await session.commit()
+                log.info(
+                    "admin_user.seeded",
+                    email=DEFAULT_ADMIN_EMAIL,
+                    note="Change password after first login via Admin Panel",
+                )
+            else:
+                log.info("admin_user.exists", count=count)
+    except Exception as e:
+        log.error("admin_user.seed_failed", error=str(e))
 
 
 async def _seed_demo_data() -> None:

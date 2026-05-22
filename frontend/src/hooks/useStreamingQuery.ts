@@ -11,12 +11,15 @@ export interface TransparencyStep {
     intent?: string
     rephrased_question?: string
     sql?: string
+    tables?: string[]
     row_count?: number
     columns?: string[]
     insights?: string[]
     key_metrics?: Record<string, string>
     viz_type?: string
   }
+  result?: QueryResponse
+  error?: string
   timestamp?: number
 }
 

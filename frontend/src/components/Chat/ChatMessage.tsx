@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { ChevronDown, ChevronUp, Code, Lightbulb, Clock, Edit2, Trash2, Sparkles, X } from 'lucide-react'
+import { ChevronDown, ChevronUp, Code, Lightbulb, Clock, Edit2, Trash2, Sparkles, X, Database } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { ChartRenderer } from '../Charts/ChartRenderer'
 import { indianiseCurrencyText, autoFormatValue } from '../../lib/formatters'
@@ -15,7 +15,6 @@ interface Props {
 
 export const ChatMessageComponent: React.FC<Props> = ({ message, onFollowUp, onEdit, onDelete, theme = 'light' }) => {
   const [showSQL, setShowSQL] = useState(false)
-  const [showExplain, setShowExplain] = useState(false)
 
   if (message.role === 'user') {
     return (
@@ -60,8 +59,8 @@ export const ChatMessageComponent: React.FC<Props> = ({ message, onFollowUp, onE
 
   return (
     <div className="flex flex-col gap-3 mb-6">
-      {/* Agent badge */}
-      <div className="flex items-center gap-2 text-xs text-zinc-500">
+      {/* Agent badge & Steps toggle */}
+      <div className="flex items-center flex-wrap gap-2 text-xs text-zinc-500">
         <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold">
           AI
         </div>
@@ -76,7 +75,86 @@ export const ChatMessageComponent: React.FC<Props> = ({ message, onFollowUp, onE
             {message.row_count.toLocaleString('en-IN')} rows
           </span>
         )}
+
+        {/* Inline Steps Taken toggle */}
+        {message.sql && (
+          <button
+            onClick={() => setShowSQL(!showSQL)}
+            className={`flex items-center gap-1.5 px-2 py-1 rounded transition-colors ml-1 ${
+              showSQL 
+                ? theme === 'dark' ? 'bg-zinc-800 text-zinc-300' : 'bg-slate-200 text-slate-700'
+                : theme === 'dark' ? 'hover:bg-zinc-800/50 text-zinc-400' : 'hover:bg-slate-100 text-slate-500'
+            }`}
+          >
+            <Database size={12} />
+            <span>Steps Taken</span>
+            {showSQL ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+          </button>
+        )}
       </div>
+
+      {/* Expanded Steps Block */}
+      {showSQL && message.sql && (
+        <div className={`mt-1 rounded-xl border p-4 text-xs ${
+          theme === 'dark' ? 'border-zinc-700 bg-zinc-900/50' : 'border-slate-200 bg-white shadow-sm'
+        }`}>
+          <div className="space-y-4">
+            {/* Step: Intent */}
+            <div className="flex gap-2">
+              <Lightbulb size={14} className="text-purple-500 mt-0.5" />
+              <div>
+                <span className={`font-semibold block ${theme === 'dark' ? 'text-zinc-300' : 'text-slate-700'}`}>Understood Intent</span>
+                <span className={theme === 'dark' ? 'text-zinc-400' : 'text-slate-500'}>
+                  {message.viz_type ? `Detected request for ${message.viz_type} chart` : 'Analyzing data request'}
+                </span>
+              </div>
+            </div>
+
+            {/* Step: Schema */}
+            <div className="flex gap-2">
+              <Database size={14} className="text-blue-500 mt-0.5" />
+              <div>
+                <span className={`font-semibold block ${theme === 'dark' ? 'text-zinc-300' : 'text-slate-700'}`}>Discovered Schema</span>
+                {message.columns && message.columns.length > 0 ? (
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {message.columns.map(col => (
+                      <span key={col} className={`px-1.5 py-0.5 rounded font-mono text-[10px] ${
+                        theme === 'dark' ? 'bg-zinc-800 text-zinc-300' : 'bg-slate-100 text-slate-600'
+                      }`}>
+                        {col}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <span className={theme === 'dark' ? 'text-zinc-400' : 'text-slate-500'}>Scanned relevant tables...</span>
+                )}
+              </div>
+            </div>
+
+            {/* Step: SQL */}
+            <div className="flex gap-2">
+              <Code size={14} className="text-green-500 mt-0.5" />
+              <div className="w-full overflow-hidden">
+                <span className={`font-semibold block ${theme === 'dark' ? 'text-zinc-300' : 'text-slate-700'}`}>Generated SQL</span>
+                <pre className="mt-1.5 px-3 py-2 bg-zinc-950 text-green-400 rounded text-[10px] overflow-x-auto whitespace-pre-wrap font-mono">
+                  {message.sql}
+                </pre>
+              </div>
+            </div>
+            
+            {/* Step: Execution */}
+            <div className="flex gap-2">
+              <Sparkles size={14} className="text-amber-500 mt-0.5" />
+              <div>
+                <span className={`font-semibold block ${theme === 'dark' ? 'text-zinc-300' : 'text-slate-700'}`}>Executed & Analyzed</span>
+                <span className={theme === 'dark' ? 'text-zinc-400' : 'text-slate-500'}>
+                  Processed {message.row_count} rows and extracted key business metrics.
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Error state — friendly messages for known errors */}
       {message.error && (
@@ -147,79 +225,10 @@ export const ChatMessageComponent: React.FC<Props> = ({ message, onFollowUp, onE
             rows={message.rows}
             theme={theme}
           />
-          <button
-            onClick={() => setShowExplain(!showExplain)}
-            className={`absolute top-2 right-2 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium opacity-0 group-hover:opacity-100 transition-all shadow-sm ${
-              showExplain
-                ? 'bg-purple-600 text-white'
-                : theme === 'dark'
-                  ? 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
-                  : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
-            }`}
-            title={showExplain ? 'Hide explanation' : 'Explain this chart'}
-          >
-            <Sparkles size={13} />
-            {showExplain ? 'Hide' : 'Explain'}
-          </button>
         </div>
       )}
 
-      {/* Explain This Chart Modal */}
-      {showExplain && message.chart && (
-        <div className={`rounded-xl border p-4 text-sm ${theme === 'dark' ? 'bg-zinc-900 border-zinc-700' : 'bg-purple-50 border-purple-200'}`}>
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Sparkles size={14} className="text-purple-500" />
-              <span className={`font-semibold text-xs ${theme === 'dark' ? 'text-zinc-200' : 'text-purple-800'}`}>
-                Chart Explanation
-              </span>
-            </div>
-            <button onClick={() => setShowExplain(false)} className="text-zinc-400 hover:text-zinc-600">
-              <X size={14} />
-            </button>
-          </div>
-          <div className={`space-y-2 ${theme === 'dark' ? 'text-zinc-300' : 'text-purple-900'}`}>
-            <p className="text-xs">
-              <span className="font-medium">Chart Type:</span> {message.viz_type || 'Auto-detected'}
-            </p>
-            {message.columns && message.columns.length > 0 && (
-              <p className="text-xs">
-                <span className="font-medium">Data Columns:</span> {message.columns.join(', ')}
-              </p>
-            )}
-            {message.row_count !== undefined && (
-              <p className="text-xs">
-                <span className="font-medium">Rows:</span> {message.row_count.toLocaleString('en-IN')}
-              </p>
-            )}
-            {message.insights && message.insights.length > 0 && (
-              <div className="mt-2">
-                <p className={`text-xs font-medium mb-1 ${theme === 'dark' ? 'text-zinc-400' : 'text-purple-700'}`}>
-                  What this shows:
-                </p>
-                <ul className="space-y-1">
-                  {message.insights.map((ins, i) => (
-                    <li key={i} className="text-xs flex gap-2">
-                      <span className="text-purple-400 mt-0.5">•</span>
-                      {indianiseCurrencyText(ins)}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {message.sql && (
-              <div className="mt-2">
-                <p className={`text-xs font-medium mb-1 ${theme === 'dark' ? 'text-zinc-400' : 'text-purple-700'}`}>
-                  Underlying Query:
-                </p>
-                <pre className="text-xs bg-zinc-900 text-green-400 p-3 rounded-lg overflow-x-auto whitespace-pre-wrap">
-                  {message.sql}
-                </pre>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+
 
       {/* Insights — $→₹ converted */}
       {message.insights && message.insights.length > 0 && (
@@ -238,30 +247,7 @@ export const ChatMessageComponent: React.FC<Props> = ({ message, onFollowUp, onE
         </div>
       )}
 
-      {/* SQL toggle */}
-      {message.sql && (
-        <div className={`border rounded-xl overflow-hidden ${theme === 'dark' ? 'border-zinc-700' : 'border-zinc-200'}`}>
-          <button
-            onClick={() => setShowSQL(!showSQL)}
-            className={`w-full flex items-center justify-between px-4 py-2.5 text-xs font-medium transition ${
-              theme === 'dark'
-                ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300'
-                : 'bg-zinc-50 hover:bg-zinc-100 text-zinc-600'
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <Code size={13} />
-              Generated SQL
-            </div>
-            {showSQL ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </button>
-          {showSQL && (
-            <pre className="px-4 py-3 text-xs bg-zinc-900 text-green-400 overflow-x-auto whitespace-pre-wrap">
-              {message.sql}
-            </pre>
-          )}
-        </div>
-      )}
+
 
       {/* Follow-up questions */}
       {message.follow_up_questions && message.follow_up_questions.length > 0 && (

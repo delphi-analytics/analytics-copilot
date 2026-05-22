@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import {
   X, ChevronLeft, ChevronRight, Pin, PinOff, Settings, User, LogOut, Moon, Sun,
   Shield, Search, MessageSquare, Grid3X3, HelpCircle, UserCircle, Sparkles,
-  LayoutDashboard, FileText, BarChart3
+  LayoutDashboard, FileText, BarChart3, Trash2
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useChatStore, ChatSession } from '../../store/chat'
@@ -13,9 +13,10 @@ import { logout } from '../../api/auth'
 interface SidebarProps {
   isOpen: boolean
   onToggle: () => void
+  onSessionChange?: () => void
 }
 
-export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
+export default function Sidebar({ isOpen, onToggle, onSessionChange }: SidebarProps) {
   const { sessions, activeSessionId, loadSession, startNewSession, deleteSession, togglePin, getPinnedSessions } = useChatStore()
   const { user, clearAuth } = useAuthStore()
   const { theme, toggleTheme } = useThemeStore()
@@ -24,6 +25,7 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
+  const [sessionToDelete, setSessionToDelete] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
 
   const pinnedSessions = getPinnedSessions()
@@ -87,6 +89,42 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
                 className="flex-1 px-4 py-2 rounded-lg font-medium bg-red-600 text-white hover:bg-red-700 transition-colors"
               >
                 Logout
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Chat Confirmation Modal */}
+      {sessionToDelete && (
+        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
+          <div className={`${theme === 'dark' ? 'bg-zinc-800' : 'bg-white'} rounded-xl p-6 max-w-sm w-full shadow-2xl`}>
+            <h3 className={`text-lg font-semibold mb-2 flex items-center gap-2 ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>
+              <Trash2 size={18} className="text-red-500" />
+              Delete Chat
+            </h3>
+            <p className={`text-sm mb-6 ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-600'}`}>
+              Are you sure you want to delete this chat session? This action cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setSessionToDelete(null)}
+                className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
+                  theme === 'dark'
+                    ? 'bg-zinc-700 text-white hover:bg-zinc-600'
+                    : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200'
+                }`}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  deleteSession(sessionToDelete)
+                  setSessionToDelete(null)
+                }}
+                className="flex-1 px-4 py-2 rounded-lg font-medium bg-red-600 text-white hover:bg-red-700 transition-colors"
+              >
+                Delete
               </button>
             </div>
           </div>
@@ -160,7 +198,7 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
         <div className={`flex items-center justify-between p-3 ${theme === 'dark' ? 'border-zinc-800' : 'border-slate-200'} border-b`}>
           {isOpen && (
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${theme === 'dark' ? 'bg-zinc-800 text-white' : 'bg-zinc-900 text-white'}`}>
                 <span className="text-white text-sm font-bold">AC</span>
               </div>
               <span className="font-semibold text-sm">Analytics Copilot</span>
@@ -177,11 +215,14 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
         {/* New Chat Button */}
         <div className="p-2">
           <button
-            onClick={startNewSession}
+            onClick={() => {
+              onSessionChange?.()
+              startNewSession()
+            }}
             className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
               isOpen
-                ? 'bg-blue-600 hover:bg-blue-700 text-white justify-start'
-                : 'bg-blue-600 hover:bg-blue-700 text-white justify-center'
+                ? (theme === 'dark' ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-900 justify-start' : 'bg-zinc-900 hover:bg-zinc-800 text-white justify-start')
+                : (theme === 'dark' ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-900 justify-center' : 'bg-zinc-900 hover:bg-zinc-800 text-white justify-center')
             }`}
           >
             <MessageSquare size={16} />
@@ -271,7 +312,7 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
                     theme={theme}
                     onSelect={() => loadSession(session.id)}
                     onTogglePin={() => togglePin(session.id)}
-                    onDelete={() => deleteSession(session.id)}
+                    onDelete={() => setSessionToDelete(session.id)}
                   />
                 ))}
               </div>
@@ -296,7 +337,7 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
                     theme={theme}
                     onSelect={() => loadSession(session.id)}
                     onTogglePin={() => togglePin(session.id)}
-                    onDelete={() => deleteSession(session.id)}
+                    onDelete={() => setSessionToDelete(session.id)}
                   />
                 ))}
               </div>
@@ -425,7 +466,7 @@ export default function Sidebar({ isOpen, onToggle }: SidebarProps) {
                         theme === 'dark' ? 'hover:bg-zinc-700' : 'hover:bg-slate-50'
                       }`}
                     >
-                      <UserCircle size={18} className="text-blue-400" />
+                      <UserCircle size={18} className="text-zinc-400" />
                       <div className="text-left">
                         <p className={`text-sm font-medium ${theme === 'dark' ? 'text-white' : 'text-zinc-900'}`}>Profile</p>
                       </div>
@@ -531,13 +572,16 @@ function SidebarSessionItem({
       onMouseLeave={() => setShowActions(false)}
     >
       <button
-        onClick={onSelect}
+        onClick={() => {
+          onSessionChange?.()
+          loadSession(session.id)
+        }}
         className={`flex-1 flex items-center gap-2 min-w-0 ${
           isExpanded ? 'justify-start' : 'justify-center'
         }`}
       >
         {session.pinned ? (
-          <Pin size={14} className="text-blue-400 flex-shrink-0" />
+          <Pin size={14} className="text-zinc-500 flex-shrink-0" />
         ) : (
           <div className="w-3.5 h-3.5 rounded-full bg-zinc-700 flex-shrink-0" />
         )}
