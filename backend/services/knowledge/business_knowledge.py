@@ -367,6 +367,7 @@ class QAMemoryService:
         sql: str,
         tables: list[str],
         columns: list[str],
+        user_id: str = "anonymous",
         viz_type: str | None = None
     ):
         """Store a Q&A pair."""
@@ -395,16 +396,17 @@ class QAMemoryService:
                             "tables": tables,
                             "columns": columns,
                             "viz_type": viz_type,
+                            "user_id": user_id,
                             "timestamp": str(structlog.time.now())
                         }
                     )
                 ]
             )
-            log.info("qa_memory.stored", question=question[:50])
+            log.info("qa_memory.stored", question=question[:50], user_id=user_id)
         except Exception as e:
             log.error("qa_memory.store_failed", error=str(e))
 
-    def search(self, question: str, threshold: float = 0.92) -> dict[str, Any] | None:
+    def search(self, question: str, user_id: str = "anonymous", threshold: float = 0.92) -> dict[str, Any] | None:
         """Search for similar questions."""
         if not self.vector_memory.enabled:
             return None
@@ -414,6 +416,14 @@ class QAMemoryService:
             results = self.vector_memory.client.query_points(
                 collection_name=QA_MEMORY_COLLECTION,
                 query=vector,
+                query_filter=models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key="user_id",
+                            match=models.MatchValue(value=user_id)
+                        )
+                    ]
+                ),
                 limit=1,
                 score_threshold=threshold
             )

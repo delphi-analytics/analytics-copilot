@@ -132,19 +132,53 @@ async def approve_change(
         .where(ApprovalQueue.id == approval_id)
         .values(
             status="APPROVED",
-            reviewed_by=current_user.id,
+            reviewed_by=current_user.id if current_user else "admin",
             reviewed_at=datetime.utcnow()
         )
     )
 
+    import json
     # Apply the changes to knowledge documents
-    if approval.change_type == "db_schema":
-        # Re-index DB knowledge
-        db_service = get_db_knowledge_service()
-        db_service.ensure_collection()
+    if approval.change_type == "business_knowledge":
+        proposed_kb = approval.diff_data.get("proposed")
+        if proposed_kb:
+            service = get_business_knowledge_service()
+            try:
+                with open(service.knowledge_path, "w") as f:
+                    json.dump(proposed_kb, f, indent=2)
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to write business knowledge: {str(e)}")
+            
+            # Reindex
+            from backend.routers.knowledge import run_reindex_all_knowledge
+            await run_reindex_all_knowledge()
+
+    elif approval.change_type == "db_schema":
+        # Check if this is a proposal metadata update
+        proposed_table = approval.diff_data.get("proposed")
+        tname = approval.diff_data.get("table_name")
+        
+        if tname and proposed_table:
+            # Load current db intelligence, merge, and save
+            from backend.services.db_intelligence import CONTEXT_FILE
+            try:
+                current_context = {}
+                if CONTEXT_FILE.exists():
+                    with open(CONTEXT_FILE, "r") as f:
+                        current_context = json.load(f)
+                
+                if "tables" not in current_context:
+                    current_context["tables"] = {}
+                current_context["tables"][tname] = proposed_table
+                
+                with open(CONTEXT_FILE, "w") as f:
+                    json.dump(current_context, f, indent=2, default=str)
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to save db context: {str(e)}")
+        
         # Trigger full re-index
-        from backend.main import _reindex_knowledge
-        await _reindex_knowledge()
+        from backend.routers.knowledge import run_reindex_all_knowledge
+        await run_reindex_all_knowledge()
 
     await db.commit()
     return {"status": "approved", "message": "Change approved and applied"}

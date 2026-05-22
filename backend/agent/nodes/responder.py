@@ -112,95 +112,80 @@ def _extract_tables_from_sql(sql: str) -> list[str]:
     return list(set(tables))
 
 
-def _get_conversational_response(intent_type: str, question: str) -> dict:
-    """Generate conversational response for greetings and off-topic questions."""
+async def _get_conversational_response(intent_type: str, question: str, history: list[dict] = None) -> dict:
+    """Generate conversational response dynamically using LLM for greetings, general queries and off-topic questions."""
+    history_context = ""
+    if history:
+        recent_history = history[-5:]
+        history_context = "\n".join([
+            f"{msg.get('role', 'user')}: {msg.get('content', '')}"
+            for msg in recent_history
+        ])
+        history_context = f"\n\nRecent conversation:\n{history_context}"
+
     if intent_type == "greeting":
-        return {
-            "text": (
-                "# 👋 Hello! I'm your Data Analytics Copilot\n\n"
-                "I can help you explore and analyze your data with natural language questions.\n\n"
-                "**Try asking:**\n"
-                "• Show revenue by platform\n"
-                "• Top 10 products by sales\n"
-                "• What's the trend for Nykaa this month?\n"
-                "• Compare inventory across platforms\n\n"
-                "**Or ask analytical questions:**\n"
-                "• Why is Nykaa performing better?\n"
-                "• What caused the drop in returns?\n"
-                "• How are we doing this quarter?"
-            ),
-            "chart": None,
-            "insights": [],
-            "follow_up_questions": [
-                "Show me revenue by platform",
-                "What are the top selling products?",
-                "How does Nykaa compare to Myntra?"
-            ],
-            "viz_type": None,
-            "row_count": 0,
-        }
+        prompt = f"""You are a friendly Data Analytics Copilot for Limese (an e-commerce cosmetics brand).
+User just greeted you with: "{question}"{history_context}
+
+Respond naturally and warmly (1-2 sentences max). Then suggest 3 specific analytics questions they could ask about their business data.
+Keep it concise and conversational. DO NOT use markdown headers like ## or ###."""
     elif intent_type == "conversational":
-        # Handle "who are you", "what can you do", etc.
-        return {
-            "text": (
-                "I'm your **Data Analytics Copilot** — an AI assistant that helps you explore and analyze "
-                "your data using natural language questions.\n\n"
-                "**Here's what I can do:**\n"
-                "• Answer questions about your sales, revenue, products, and customers\n"
-                "• Generate charts and visualizations on demand\n"
-                "• Analyze trends and explain insights in plain English\n"
-                "• Help you discover patterns in your data\n\n"
-                "**Just ask me anything like:**\n"
-                "• \"Show me revenue by platform\"\n"
-                "• \"Which products are selling the most?\"\n"
-                "• \"What's the trend for Nykaa this month?\"\n"
-                "• \"Why are returns increasing?\""
-            ),
-            "chart": None,
-            "insights": [],
-            "follow_up_questions": [
-                "Show me revenue by platform",
-                "What are the top selling products?",
-                "How does Nykaa compare to Myntra?"
-            ],
-            "viz_type": None,
-            "row_count": 0,
-        }
-    elif intent_type == "off_topic":
-        return {
-            "text": (
-                "I'm an analytics assistant focused on helping you explore your data. "
-                f"I can't help with \"{question}\", but I'd love to help you analyze your sales, "
-                "inventory, or customer metrics instead!"
-            ),
-            "chart": None,
-            "insights": [],
-            "follow_up_questions": [
-                "Show me revenue by platform",
-                "What are the top selling products?",
-                "How is our business doing this month?"
-            ],
-            "viz_type": None,
-            "row_count": 0,
-        }
+        prompt = f"""You are a Data Analytics Copilot for Limese (an e-commerce cosmetics brand).
+User asked: "{question}"{history_context}
+
+Explain what you can do naturally in 2-3 sentences. Focus on:
+- Answering questions about sales, revenue, products, customers
+- Generating charts and visualizations
+- Analyzing trends and providing insights
+- Working with data from multiple platforms (Nykaa, Myntra, Amazon, etc.)
+
+End with 3 example questions they could ask. Be conversational, NOT robotic."""
     else:
-        # Fallback for unknown conversational intents
-        return {
-            "text": (
-                "I'm not sure I understood that. Could you rephrase your question? "
-                "I'm here to help you analyze your data - try asking about sales, products, "
-                "platforms, or trends."
-            ),
-            "chart": None,
-            "insights": [],
-            "follow_up_questions": [
-                "Show me revenue by platform",
-                "What are the top selling products?",
-                "Show monthly sales trend"
-            ],
-            "viz_type": None,
-            "row_count": 0,
-        }
+        # off_topic
+        prompt = f"""You are a helpful AI assistant for Limese Copilot.
+User asked: "{question}"{history_context}
+
+If this is a general knowledge question (math, facts, etc.), answer it directly and concisely.
+If this is unrelated to business analytics, politely redirect them to ask about their data:
+- Sales and revenue trends
+- Product performance
+- Platform comparisons
+- Customer insights
+
+Keep your response to 2-3 sentences max. Be conversational and helpful."""
+
+    try:
+        resp = await call_llm(
+            messages=[{"role": "user", "content": prompt}],
+            task="general",
+            max_tokens=300,
+            temperature=0.8,
+        )
+        text = resp.content.strip()
+    except Exception as e:
+        log.warning("responder.conversational_llm_failed", error=str(e))
+        text = (
+            f"Hello! I'm your Data Analytics Copilot. I can help you analyze sales, products, and trends. "
+            f"How can I assist you with your data today?"
+        )
+
+    # Simple follow-up suggestions
+    follow_up_questions = [
+        "Show me revenue by platform",
+        "What are the top selling products?",
+        "Show monthly sales trend"
+    ]
+
+    return {
+        "text": text,
+        "chart": None,
+        "insights": [],
+        "follow_up_questions": follow_up_questions,
+        "viz_type": None,
+        "row_count": 0,
+        "columns": [],
+        "rows": [],
+    }
 
 
 async def compose_response(state: AnalyticsState) -> AnalyticsState:
@@ -229,7 +214,7 @@ async def compose_response(state: AnalyticsState) -> AnalyticsState:
     # This handles cases like "gm", "what are you doing" that go through LLM
     if intent_type in ("greeting", "conversational", "off_topic"):
         log.info("responder.llm_classified_conversational", type=intent_type)
-        greeting_response = _get_conversational_response(intent_type, question)
+        greeting_response = await _get_conversational_response(intent_type, question, state.get("conversation_history"))
         return {
             **state,
             "response_text": greeting_response["text"],
@@ -388,6 +373,7 @@ RULES:
                 sql=state.get("sql_query", ""),
                 tables=_extract_tables_from_sql(sql) if sql else [],
                 columns=query_results.get("columns", []),
+                user_id=state.get("user_id", "anonymous"),
                 viz_type=viz_type
             )
             log.debug("responder.stored_in_qa_memory", question=state["user_question"][:60])

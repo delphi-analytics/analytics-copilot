@@ -164,7 +164,7 @@ async def run_analytics_agent(
 
     cached_sql = None
     if vector_memory.enabled:
-        cached_payload = vector_memory.search_semantic_cache(question, threshold=0.92)
+        cached_payload = vector_memory.search_semantic_cache(question, user_id=user_id, threshold=0.92)
         if cached_payload and cached_payload.get("sql"):
             matched_q = cached_payload.get("question", "")
             

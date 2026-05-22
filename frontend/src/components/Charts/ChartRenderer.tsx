@@ -14,6 +14,7 @@ interface ChartRendererProps {
   rows?: Record<string, unknown>[]
   height?: string
   theme?: 'light' | 'dark'
+  role?: string
 }
 
 // ─── Formatters ──────────────────────────────────────────────────────────────
@@ -222,13 +223,23 @@ function exportTableToCSV(columns: string[], rows: Record<string, unknown>[], fi
 // ─── Components ───────────────────────────────────────────────────────────────
 
 export const ChartRenderer: React.FC<ChartRendererProps> = ({
-  vizConfig, vizType, columns = [], rows = [], height = '400px', theme = 'light'
+  vizConfig, vizType, columns = [], rows = [], height = '400px', theme = 'light', role
 }) => {
   const chartRef = useRef<any>(null)
 
   if (!vizConfig || vizType === null) return null
 
   if (vizType === 'table' || vizConfig.type === 'table') {
+    if (role === 'non_tech_user') {
+      return (
+        <div className={`p-6 rounded-xl border text-center ${
+          theme === 'dark' ? 'bg-zinc-900 border-zinc-800 text-zinc-400' : 'bg-zinc-50 border-zinc-200 text-zinc-600'
+        }`}>
+          <p className="text-sm font-semibold mb-1">📊 Detail Table Hidden</p>
+          <p className="text-xs">Underlying technical data tables are hidden for Non-tech Users. Please switch your role to Team Member or Business Analyst to view details.</p>
+        </div>
+      )
+    }
     return <DataTable columns={columns} rows={rows} theme={theme} />
   }
 

@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown'
 import { ChartRenderer } from '../Charts/ChartRenderer'
 import { indianiseCurrencyText, autoFormatValue } from '../../lib/formatters'
 import type { ChatMessage as ChatMessageType } from '../../store/chat'
+import { useAuthStore } from '../../store/auth'
 
 interface Props {
   message: ChatMessageType
@@ -16,6 +17,8 @@ interface Props {
 export const ChatMessageComponent: React.FC<Props> = ({ message, onFollowUp, onEdit, onDelete, theme = 'light' }) => {
   const [showSQL, setShowSQL] = useState(false)
   const [showExplain, setShowExplain] = useState(false)
+  const { user } = useAuthStore()
+  const role = user?.role || 'team_member'
 
   if (message.role === 'user') {
     return (
@@ -146,6 +149,7 @@ export const ChatMessageComponent: React.FC<Props> = ({ message, onFollowUp, onE
             columns={message.columns}
             rows={message.rows}
             theme={theme}
+            role={role}
           />
           <button
             onClick={() => setShowExplain(!showExplain)}
@@ -207,7 +211,7 @@ export const ChatMessageComponent: React.FC<Props> = ({ message, onFollowUp, onE
                 </ul>
               </div>
             )}
-            {message.sql && (
+            {(role === 'business_analyst' || role === 'admin') && message.sql && (
               <div className="mt-2">
                 <p className={`text-xs font-medium mb-1 ${theme === 'dark' ? 'text-zinc-400' : 'text-purple-700'}`}>
                   Underlying Query:
@@ -239,7 +243,7 @@ export const ChatMessageComponent: React.FC<Props> = ({ message, onFollowUp, onE
       )}
 
       {/* SQL toggle */}
-      {message.sql && (
+      {(role === 'business_analyst' || role === 'admin') && message.sql && (
         <div className={`border rounded-xl overflow-hidden ${theme === 'dark' ? 'border-zinc-700' : 'border-zinc-200'}`}>
           <button
             onClick={() => setShowSQL(!showSQL)}

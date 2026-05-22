@@ -115,7 +115,7 @@ export function useSSE() {
       eventSource.close()
       setIsStreaming(false)
     }
-  }, [options])
+  }, [])
 
   const disconnect = useCallback(() => {
     if (eventSourceRef.current) {

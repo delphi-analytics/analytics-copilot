@@ -70,7 +70,7 @@ class VectorMemory:
         except Exception as e:
             log.error("qdrant.store_failed", error=str(e))
 
-    def search_similar_queries(self, question: str, limit: int = 3) -> list[dict]:
+    def search_similar_queries(self, question: str, user_id: str = "anonymous", limit: int = 3) -> list[dict]:
         if not self.client and self.enabled:
             self.connect()
         if not self.enabled:
@@ -81,6 +81,14 @@ class VectorMemory:
             results = self.client.query_points(
                 collection_name=self.collection_name,
                 query=vector,
+                query_filter=models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key="user_id",
+                            match=models.MatchValue(value=user_id)
+                        )
+                    ]
+                ),
                 limit=limit,
                 score_threshold=0.85
             )
@@ -89,7 +97,7 @@ class VectorMemory:
             log.error("qdrant.search_failed", error=str(e))
             return []
 
-    def search_semantic_cache(self, question: str, threshold: float = 0.92) -> dict | None:
+    def search_semantic_cache(self, question: str, user_id: str = "anonymous", threshold: float = 0.92) -> dict | None:
         if not self.client and self.enabled:
             self.connect()
         if not self.enabled:
@@ -100,6 +108,14 @@ class VectorMemory:
             results = self.client.query_points(
                 collection_name=self.collection_name,
                 query=vector,
+                query_filter=models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key="user_id",
+                            match=models.MatchValue(value=user_id)
+                        )
+                    ]
+                ),
                 limit=1,
                 score_threshold=threshold
             )
