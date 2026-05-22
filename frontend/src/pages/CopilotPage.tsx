@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { BarChart2, Database, Clock, Plus, Trash2 } from 'lucide-react'
+import { BarChart2, Database, Clock, Plus, Trash2, MessageSquare, Code, LayoutDashboard } from 'lucide-react'
 import { useChatStore, ChatSession } from '../store/chat'
 import { useThemeStore } from '../store/theme'
+import { useAuthStore } from '../store/auth'
 import { sendQuery } from '../api/client'
 import { ChatMessageComponent } from '../components/Chat/ChatMessage'
 import { ChatInput } from '../components/Chat/ChatInput'
@@ -15,10 +16,11 @@ export const CopilotPage: React.FC = () => {
     sessions, activeSessionId, isLoading, datasourceId,
     addUserMessage, addAssistantMessage, setLoading, startNewSession,
     setConversationId, setUploadedFile, setDatasourceId, loadSession, purgeExpiredSessions,
-    deleteSession, deleteMessage
+    deleteSession, deleteMessage, clearForNewUser
   } = useChatStore()
 
   const { theme } = useThemeStore()
+  const { user } = useAuthStore()
 
   // Permanently reset to ClickHouse datasource — clear any stale uploaded file from localStorage
   useEffect(() => {
@@ -41,6 +43,10 @@ export const CopilotPage: React.FC = () => {
   // Streaming query hook
   const { streamQuery, isStreaming } = useStreamingQuery()
 
+  // Chat modes
+  type ChatMode = 'chat' | 'sql' | 'dashboard'
+  const [chatMode, setChatMode] = useState<ChatMode>('chat')
+
   // Disambiguation state
   const [disambiguation, setDisambiguation] = useState<{
     keyword: string
@@ -53,6 +59,14 @@ export const CopilotPage: React.FC = () => {
     const interval = setInterval(purgeExpiredSessions, 60000)
     return () => clearInterval(interval)
   }, [purgeExpiredSessions])
+
+  // Check user on mount and clear chat if user changed
+  useEffect(() => {
+    const state = useChatStore.getState()
+    if (user && state.userId !== user.id) {
+      clearForNewUser(user.id)
+    }
+  }, [user?.id, clearForNewUser])
 
   const bottomRef = useRef<HTMLDivElement>(null)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
@@ -202,6 +216,29 @@ export const CopilotPage: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Mode Switcher */}
+            <div className={`flex items-center gap-0.5 rounded-lg p-0.5 text-xs ${
+              theme === 'dark' ? 'bg-zinc-800' : 'bg-slate-100'
+            }`}>
+              {[
+                { id: 'chat' as ChatMode, icon: <MessageSquare size={13} />, label: 'Chat' },
+                { id: 'sql' as ChatMode, icon: <Code size={13} />, label: 'SQL' },
+                { id: 'dashboard' as ChatMode, icon: <LayoutDashboard size={13} />, label: 'Dashboard' },
+              ].map(m => (
+                <button
+                  key={m.id}
+                  onClick={() => setChatMode(m.id)}
+                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md transition ${
+                    chatMode === m.id
+                      ? theme === 'dark' ? 'bg-zinc-700 text-white shadow-sm' : 'bg-white text-slate-800 shadow-sm'
+                      : theme === 'dark' ? 'text-zinc-400 hover:text-zinc-200' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  {m.icon}
+                  <span>{m.label}</span>
+                </button>
+              ))}
+            </div>
             {/* Datasource indicator */}
             <div className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs ${
               theme === 'dark' ? 'bg-zinc-800 text-zinc-300' : 'bg-slate-100 text-slate-600'

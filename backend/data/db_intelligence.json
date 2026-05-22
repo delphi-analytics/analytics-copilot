@@ -1,8 +1,8 @@
 {
   "database": "limese",
   "host": "118.95.209.221:8123",
-  "scanned_at": "2026-05-22T05:56:55.378862",
-  "scan_duration_seconds": 264.0,
+  "scanned_at": "2026-05-22T06:45:28.588902",
+  "scan_duration_seconds": 217.0,
   "tables": {
     "combined_sales_final": {
       "table": "combined_sales_final",
@@ -4213,7 +4213,7 @@
           "name": "uniware_created_at",
           "type": "DateTime",
           "annotation": "",
-          "unique_count": 190260,
+          "unique_count": 190267,
           "non_null_count": 315053,
           "date_range": {
             "min": "1970-01-01 05:30:00",
@@ -4224,7 +4224,7 @@
           "name": "channel_created_at",
           "type": "DateTime",
           "annotation": "",
-          "unique_count": 198769,
+          "unique_count": 198768,
           "non_null_count": 315053,
           "date_range": {
             "min": "1970-01-01 05:30:00",
@@ -4327,7 +4327,7 @@
           "annotation": "",
           "unique_count": 1,
           "non_null_count": 166442,
-          "constant_value": "None",
+          "constant_value": "********",
           "is_constant": true
         },
         {
@@ -4786,7 +4786,7 @@
           "annotation": "",
           "unique_count": 1,
           "non_null_count": 39121,
-          "constant_value": "None",
+          "constant_value": "No",
           "is_constant": true
         },
         {
@@ -5063,7 +5063,7 @@
           "annotation": "",
           "unique_count": 1,
           "non_null_count": 39121,
-          "constant_value": "false",
+          "constant_value": "None",
           "is_constant": true
         },
         {
@@ -5088,7 +5088,7 @@
           "annotation": "",
           "unique_count": 1,
           "non_null_count": 39121,
-          "constant_value": "None",
+          "constant_value": "0",
           "is_constant": true
         },
         {
@@ -5623,7 +5623,7 @@
           "name": "total_allocated_to_mrp",
           "type": "Nullable(Float64)",
           "annotation": "",
-          "unique_count": 18758,
+          "unique_count": 18754,
           "non_null_count": 315053,
           "numerical_range": {
             "min": 0.0,
