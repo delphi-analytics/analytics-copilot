@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { ChevronDown, ChevronUp, Code, Lightbulb, Clock, Edit2, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronUp, Code, Lightbulb, Clock, Edit2, Trash2, Sparkles, X } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { ChartRenderer } from '../Charts/ChartRenderer'
 import { indianiseCurrencyText, autoFormatValue } from '../../lib/formatters'
@@ -15,6 +15,7 @@ interface Props {
 
 export const ChatMessageComponent: React.FC<Props> = ({ message, onFollowUp, onEdit, onDelete, theme = 'light' }) => {
   const [showSQL, setShowSQL] = useState(false)
+  const [showExplain, setShowExplain] = useState(false)
 
   if (message.role === 'user') {
     return (
@@ -138,13 +139,86 @@ export const ChatMessageComponent: React.FC<Props> = ({ message, onFollowUp, onE
 
       {/* Chart */}
       {message.chart && (
-        <ChartRenderer
-          vizConfig={message.chart as Record<string, unknown>}
-          vizType={message.viz_type || null}
-          columns={message.columns}
-          rows={message.rows}
-          theme={theme}
-        />
+        <div className="group relative">
+          <ChartRenderer
+            vizConfig={message.chart as Record<string, unknown>}
+            vizType={message.viz_type || null}
+            columns={message.columns}
+            rows={message.rows}
+            theme={theme}
+          />
+          <button
+            onClick={() => setShowExplain(!showExplain)}
+            className={`absolute top-2 right-2 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium opacity-0 group-hover:opacity-100 transition-all shadow-sm ${
+              showExplain
+                ? 'bg-purple-600 text-white'
+                : theme === 'dark'
+                  ? 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+                  : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+            }`}
+            title={showExplain ? 'Hide explanation' : 'Explain this chart'}
+          >
+            <Sparkles size={13} />
+            {showExplain ? 'Hide' : 'Explain'}
+          </button>
+        </div>
+      )}
+
+      {/* Explain This Chart Modal */}
+      {showExplain && message.chart && (
+        <div className={`rounded-xl border p-4 text-sm ${theme === 'dark' ? 'bg-zinc-900 border-zinc-700' : 'bg-purple-50 border-purple-200'}`}>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Sparkles size={14} className="text-purple-500" />
+              <span className={`font-semibold text-xs ${theme === 'dark' ? 'text-zinc-200' : 'text-purple-800'}`}>
+                Chart Explanation
+              </span>
+            </div>
+            <button onClick={() => setShowExplain(false)} className="text-zinc-400 hover:text-zinc-600">
+              <X size={14} />
+            </button>
+          </div>
+          <div className={`space-y-2 ${theme === 'dark' ? 'text-zinc-300' : 'text-purple-900'}`}>
+            <p className="text-xs">
+              <span className="font-medium">Chart Type:</span> {message.viz_type || 'Auto-detected'}
+            </p>
+            {message.columns && message.columns.length > 0 && (
+              <p className="text-xs">
+                <span className="font-medium">Data Columns:</span> {message.columns.join(', ')}
+              </p>
+            )}
+            {message.row_count !== undefined && (
+              <p className="text-xs">
+                <span className="font-medium">Rows:</span> {message.row_count.toLocaleString('en-IN')}
+              </p>
+            )}
+            {message.insights && message.insights.length > 0 && (
+              <div className="mt-2">
+                <p className={`text-xs font-medium mb-1 ${theme === 'dark' ? 'text-zinc-400' : 'text-purple-700'}`}>
+                  What this shows:
+                </p>
+                <ul className="space-y-1">
+                  {message.insights.map((ins, i) => (
+                    <li key={i} className="text-xs flex gap-2">
+                      <span className="text-purple-400 mt-0.5">•</span>
+                      {indianiseCurrencyText(ins)}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {message.sql && (
+              <div className="mt-2">
+                <p className={`text-xs font-medium mb-1 ${theme === 'dark' ? 'text-zinc-400' : 'text-purple-700'}`}>
+                  Underlying Query:
+                </p>
+                <pre className="text-xs bg-zinc-900 text-green-400 p-3 rounded-lg overflow-x-auto whitespace-pre-wrap">
+                  {message.sql}
+                </pre>
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Insights — $→₹ converted */}
