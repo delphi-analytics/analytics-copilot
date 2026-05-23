@@ -180,7 +180,6 @@ async def call_llm(
                         continue  # retry same model once
                 log.warning("llm.failed", model=m, attempt=attempt, error=str(exc)[:120])
                 break  # move to next model
-
     # SQL tasks must succeed — callers handle the exception
     if task == "sql":
         raise RuntimeError(f"All LLM models failed for SQL generation. Last error: {last_error}")

@@ -11,6 +11,7 @@ export interface TransparencyStep {
     intent?: string
     rephrased_question?: string
     sql?: string
+    tables?: string[]
     row_count?: number
     columns?: string[]
     insights?: string[]
@@ -18,6 +19,8 @@ export interface TransparencyStep {
     viz_type?: string
     tables?: string[]
   }
+  result?: QueryResponse
+  error?: string
   timestamp?: number
   result?: QueryResponse
   error?: string

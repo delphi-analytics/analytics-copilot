@@ -23,6 +23,7 @@ from backend.agent.nodes.analyst import analyze_insights
 from backend.agent.nodes.viz_config import generate_viz_config
 from backend.agent.nodes.responder import compose_response
 from backend.agent.nodes.insight_followup import handle_insight_followup, _is_insight_followup
+from backend.agent.nodes.disambiguate import disambiguate
 
 log = structlog.get_logger(__name__)
 
@@ -63,6 +64,12 @@ def _should_skip_sql(state: AnalyticsState) -> str:
     return "generate_sql"
 
 
+def _after_disambiguate(state: AnalyticsState) -> str:
+    """Route: skip pipeline if disambiguation is needed."""
+    if state.get("skip_pipeline"):
+        return "skip_to_respond"
+    return "discover_schema"
+
 def _should_retry_sql(state: AnalyticsState) -> str:
     """Route: retry SQL if execution failed due to schema mismatch."""
     error = state.get("error", "")
@@ -79,6 +86,7 @@ def build_graph() -> StateGraph:
     # Register all nodes (9 nodes + insight follow-up)
     graph.add_node("check_qa_memory", check_qa_memory)
     graph.add_node("understand_intent", understand_intent)
+    graph.add_node("disambiguate", disambiguate)
     graph.add_node("general_llm", handle_general_query)
     graph.add_node("discover_schema", discover_schema)
     graph.add_node("generate_sql", generate_sql)
@@ -106,10 +114,18 @@ def build_graph() -> StateGraph:
         "understand_intent",
         _should_skip_sql,
         {
-            "generate_sql": "discover_schema",
+            "generate_sql": "disambiguate",
             "skip_to_respond": "compose_response",
             "general_llm": "general_llm",
             "insight_followup": "insight_followup",
+        }
+    )
+    graph.add_conditional_edges(
+        "disambiguate",
+        _after_disambiguate,
+        {
+            "discover_schema": "discover_schema",
+            "skip_to_respond": "compose_response",
         }
     )
     graph.add_edge("discover_schema", "generate_sql")

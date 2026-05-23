@@ -32,8 +32,7 @@ api.interceptors.response.use(
 
       try {
         // Try to refresh token
-        const { authApi } = await import('./auth')
-        const { data } = await authApi.post('/refresh', {}, { withCredentials: true })
+        const { data } = await axios.post('/api/v1/auth/refresh', {}, { withCredentials: true })
 
         // Update store
         useAuthStore.getState().setAuth(data.user, data.access_token)

@@ -1,8 +1,9 @@
 import React, { useRef, useState } from 'react'
-import { Send, Loader } from 'lucide-react'
+import { Send, Loader, Square } from 'lucide-react'
 
 interface Props {
   onSend: (message: string) => void
+  onStop?: () => void
   isLoading: boolean
   placeholder?: string
   value?: string
@@ -10,7 +11,7 @@ interface Props {
   theme?: 'light' | 'dark'
 }
 
-export const ChatInput: React.FC<Props> = ({ onSend, isLoading, placeholder, value, onChange, theme = 'light' }) => {
+export const ChatInput: React.FC<Props> = ({ onSend, onStop, isLoading, placeholder, value, onChange, theme = 'light' }) => {
   const [internalInput, setInternalInput] = useState('')
   const input = value !== undefined ? value : internalInput
   const setInput = onChange ? onChange : setInternalInput
@@ -58,13 +59,23 @@ export const ChatInput: React.FC<Props> = ({ onSend, isLoading, placeholder, val
           />
         </div>
 
-        <button
-          onClick={handleSend}
-          disabled={!input.trim() || isLoading}
-          className="w-11 h-11 bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-200 disabled:cursor-not-allowed dark:disabled:bg-zinc-700 rounded-xl flex items-center justify-center text-white transition shadow-sm"
-        >
-          {isLoading ? <Loader size={18} className="animate-spin" /> : <Send size={18} />}
-        </button>
+        {isLoading ? (
+          <button
+            onClick={onStop}
+            className="w-11 h-11 bg-red-500 hover:bg-red-600 rounded-xl flex items-center justify-center text-white transition shadow-sm"
+            title="Stop generation"
+          >
+            <Square size={16} fill="currentColor" />
+          </button>
+        ) : (
+          <button
+            onClick={handleSend}
+            disabled={!input.trim()}
+            className="w-11 h-11 bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-200 disabled:cursor-not-allowed dark:disabled:bg-zinc-700 rounded-xl flex items-center justify-center text-white transition shadow-sm"
+          >
+            <Send size={18} />
+          </button>
+        )}
       </div>
     </div>
   )

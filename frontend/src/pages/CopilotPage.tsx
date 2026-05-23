@@ -3,7 +3,7 @@ import { BarChart2, Database, Clock, Plus, Trash2, MessageSquare, Code, LayoutDa
 import { useChatStore, ChatSession } from '../store/chat'
 import { useThemeStore } from '../store/theme'
 import { useAuthStore } from '../store/auth'
-import { sendQuery, getDatasources, getSchema } from '../api/client'
+import { sendQuery } from '../api/client'
 import { ChatMessageComponent } from '../components/Chat/ChatMessage'
 import { ChatInput } from '../components/Chat/ChatInput'
 import DisambiguationModal from '../components/DisambiguationModal'
@@ -75,7 +75,11 @@ export const CopilotPage: React.FC = () => {
   const [showTransparency, setShowTransparency] = useState(false)
 
   // Streaming query hook
-  const { streamQuery, isStreaming } = useStreamingQuery()
+  const { streamQuery, isStreaming, abort } = useStreamingQuery()
+
+  // Chat modes
+  type ChatMode = 'chat' | 'sql' | 'dashboard'
+  const [chatMode, setChatMode] = useState<ChatMode>('chat')
 
   // Chat modes
   type ChatMode = 'chat' | 'sql' | 'dashboard'
@@ -227,7 +231,17 @@ export const CopilotPage: React.FC = () => {
   return (
     <div className={`flex h-screen ${theme === 'dark' ? 'bg-zinc-950' : 'bg-slate-50'}`}>
       {/* Sidebar */}
-      <Sidebar isOpen={sidebarOpen} onToggle={() => setSidebarOpen(!sidebarOpen)} />
+      <Sidebar 
+        isOpen={sidebarOpen} 
+        onToggle={() => setSidebarOpen(!sidebarOpen)} 
+        onSessionChange={() => {
+          if (isStreaming || isLoading) {
+            abort()
+            setLoading(false)
+            setShowTransparency(false)
+          }
+        }}
+      />
 
       {/* Main Content */}
       <div className={`flex flex-col flex-1 transition-all duration-300 ${sidebarOpen ? 'lg:ml-60' : 'lg:ml-14'}`}>
@@ -236,7 +250,7 @@ export const CopilotPage: React.FC = () => {
           theme === 'dark' ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-slate-200'
         }`}>
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center">
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${theme === 'dark' ? 'bg-zinc-800' : 'bg-zinc-900'}`}>
               <BarChart2 size={18} className="text-white" />
             </div>
             <div>
@@ -300,17 +314,11 @@ export const CopilotPage: React.FC = () => {
           </div>
         </header>
 
-        {/* Messages - Fixed scrollbar */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-8 py-6 w-full">
+        {/* Messages scroll area */}
+        <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-8 py-6">
           <div className="max-w-4xl w-full mx-auto">
             {messages.length === 0 ? (
-              <WelcomeScreen
-                onQuestionClick={handleSend}
-                theme={theme}
-                schema={schema}
-                datasourceId={datasourceId}
-                loading={schemaLoading}
-              />
+              <WelcomeScreen onQuestionClick={handleSend} theme={theme} />
             ) : (
               <>
                 {messages.map((msg) => (
@@ -330,6 +338,21 @@ export const CopilotPage: React.FC = () => {
           </div>
         </div>
 
+        {/* Transparency Panel — sleek inline block right above the input */}
+        {showTransparency && transparencySteps.length > 0 && (
+          <div className="max-w-4xl w-full mx-auto px-4 mb-3">
+            <TransparencyPanel
+              steps={transparencySteps}
+              isComplete={!isLoading && !isStreaming}
+              sql={transparencySteps.find(s => s.data?.sql)?.data?.sql as string}
+              tables={(transparencySteps
+                .find(s => s.step === 'discover_schema' || s.step === 'generate_sql')
+                ?.data as { tables?: string[] } | undefined)?.tables || []}
+              columns={transparencySteps.find(s => s.data?.columns)?.data?.columns as string[]}
+            />
+          </div>
+        )}
+
         {/* Disambiguation Modal */}
         {disambiguation && (
           <div className="max-w-4xl mx-auto px-4 pb-2">
@@ -342,13 +365,18 @@ export const CopilotPage: React.FC = () => {
           </div>
         )}
 
-        {/* Input */}
+        {/* Input — full width, below the split chat area */}
         <div className={`border-t ${theme === 'dark' ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-slate-200'}`}>
           <div className="max-w-4xl mx-auto flex flex-col">
             <ChatInput
               value={chatInputValue}
               onChange={setChatInputValue}
               onSend={handleSend}
+              onStop={() => {
+                abort()
+                setLoading(false)
+                setShowTransparency(false)
+              }}
               isLoading={isLoading}
               theme={theme}
             />
@@ -397,6 +425,11 @@ export const CopilotPage: React.FC = () => {
                 onClick={() => {
                   deleteSession(sessionToDelete.id);
                   setSessionToDelete(null);
+                  if (sessionToDelete.id === activeSessionId && (isLoading || isStreaming)) {
+                    abort();
+                    setLoading(false);
+                    setShowTransparency(false);
+                  }
                 }}
                 className="px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-xs font-medium transition shadow-sm"
               >
@@ -435,6 +468,11 @@ export const CopilotPage: React.FC = () => {
                 onClick={() => {
                   deleteMessage(messageToDelete);
                   setMessageToDelete(null);
+                  if (isLoading || isStreaming) {
+                    abort();
+                    setLoading(false);
+                    setShowTransparency(false);
+                  }
                 }}
                 className="px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-xs font-medium transition shadow-sm"
               >

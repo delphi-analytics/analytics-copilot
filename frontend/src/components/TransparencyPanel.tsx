@@ -45,7 +45,7 @@ export default function TransparencyPanel({
 
   return (
     <div
-      className={`mx-4 mb-2 border rounded-lg overflow-hidden transition-all ${
+      className={`border rounded-lg overflow-hidden transition-all shadow-sm ${
         theme === 'dark'
           ? 'bg-zinc-900/50 border-zinc-800'
           : 'bg-slate-50 border-slate-200'
@@ -101,7 +101,7 @@ export default function TransparencyPanel({
 
       {/* Expanded Content */}
       {isExpanded && (
-        <div className={`px-3 pb-3 border-t ${theme === 'dark' ? 'border-zinc-800' : 'border-slate-200'}`}>
+        <div className={`flex-1 overflow-y-auto px-3 pb-3 border-t ${theme === 'dark' ? 'border-zinc-800' : 'border-slate-200'}`}>
           {/* Steps List */}
           <div className="space-y-1.5 mt-2">
             {steps.map((step, idx) => (
@@ -147,6 +147,27 @@ export default function TransparencyPanel({
                         </span>
                       )}
 
+                      {/* Preview of tables */}
+                      {step.data.tables && step.data.tables.length > 0 && (
+                        <div className={`flex flex-wrap gap-1 mt-1`}>
+                          <span className={`text-[10px] uppercase font-bold tracking-wider mb-1 block w-full ${
+                            theme === 'dark' ? 'text-zinc-400' : 'text-slate-500'
+                          }`}>Tables Scanned</span>
+                          {step.data.tables.map((table: string) => (
+                            <span
+                              key={table}
+                              className={`px-1.5 py-0.5 rounded text-xs font-mono ${
+                                theme === 'dark'
+                                  ? 'bg-blue-900/30 text-blue-300'
+                                  : 'bg-blue-100 text-blue-700'
+                              }`}
+                            >
+                              {table}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
                       {/* Preview of columns */}
                       {step.data.columns && step.data.columns.length > 0 && (
                         <div className={`flex flex-wrap gap-1 mt-1`}>
@@ -183,6 +204,33 @@ export default function TransparencyPanel({
                               {' '}+{step.data.insights.length - 1} more
                             </span>
                           )}
+                        </div>
+                      )}
+
+                      {/* Key metrics */}
+                      {step.data.key_metrics && Object.keys(step.data.key_metrics).length > 0 && (
+                        <div className={`flex flex-wrap gap-2 mt-1`}>
+                          {Object.entries(step.data.key_metrics).map(([k, v]) => (
+                            <span key={k} className={`px-2 py-0.5 rounded text-xs font-medium ${
+                              theme === 'dark' ? 'bg-indigo-900/30 text-indigo-300' : 'bg-indigo-50 text-indigo-700'
+                            }`}>
+                              {k}: {v as string}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Live SQL Query */}
+                      {step.data.sql && (
+                        <div className="mt-2">
+                          <span className={`text-[10px] uppercase font-bold tracking-wider mb-1 block ${
+                            theme === 'dark' ? 'text-blue-400' : 'text-blue-600'
+                          }`}>Live Execution SQL</span>
+                          <pre className={`p-2 rounded text-xs font-mono overflow-x-auto ${
+                            theme === 'dark' ? 'bg-zinc-950/80 text-zinc-300' : 'bg-slate-100 text-slate-700'
+                          }`}>
+                            {step.data.sql}
+                          </pre>
                         </div>
                       )}
                     </div>
