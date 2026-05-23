@@ -191,7 +191,7 @@ class BusinessKnowledgeService:
         for kw in knowledge.get("ambiguous_keywords", []):
             keyword = kw["keyword"].lower()
             if keyword in query_lower:
-                meanings = kw.get("meanings", kw.get("aliases", []))
+                meanings = kw.get("meanings", [])
                 if len(meanings) > 1:
                     return {
                         "keyword": kw["keyword"],

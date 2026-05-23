@@ -3,7 +3,7 @@ import { BarChart2, Database, Clock, Plus, Trash2, MessageSquare, Code, LayoutDa
 import { useChatStore, ChatSession } from '../store/chat'
 import { useThemeStore } from '../store/theme'
 import { useAuthStore } from '../store/auth'
-import { sendQuery } from '../api/client'
+import { sendQuery, getDatasources, getSchema } from '../api/client'
 import { ChatMessageComponent } from '../components/Chat/ChatMessage'
 import { ChatInput } from '../components/Chat/ChatInput'
 import DisambiguationModal from '../components/DisambiguationModal'
@@ -76,10 +76,6 @@ export const CopilotPage: React.FC = () => {
 
   // Streaming query hook
   const { streamQuery, isStreaming, abort } = useStreamingQuery()
-
-  // Chat modes
-  type ChatMode = 'chat' | 'sql' | 'dashboard'
-  const [chatMode, setChatMode] = useState<ChatMode>('chat')
 
   // Chat modes
   type ChatMode = 'chat' | 'sql' | 'dashboard'
@@ -318,7 +314,13 @@ export const CopilotPage: React.FC = () => {
         <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-8 py-6">
           <div className="max-w-4xl w-full mx-auto">
             {messages.length === 0 ? (
-              <WelcomeScreen onQuestionClick={handleSend} theme={theme} />
+              <WelcomeScreen
+                onQuestionClick={handleSend}
+                theme={theme}
+                schema={schema}
+                datasourceId={datasourceId}
+                loading={schemaLoading}
+              />
             ) : (
               <>
                 {messages.map((msg) => (
