@@ -121,7 +121,7 @@ async def query(payload: QueryRequest, db: DbDep, current_user: UserDep = None) 
             chart=None,
             insights=[f"Please select the intended meaning of '{disambiguation_result['keyword']}'"],
             key_metrics={},
-            follow_up_questions=disambiguation_result.get("options", []),
+            follow_up_questions=disambiguation_result.get("meanings", []),
             sql="",
             row_count=0,
             viz_type=None,
@@ -129,7 +129,7 @@ async def query(payload: QueryRequest, db: DbDep, current_user: UserDep = None) 
             rows=[],
             total_latency_ms=0,
             model_used="",
-            error=f"DISAMBIGUATION_NEEDED:{disambiguation_result['keyword']}:{','.join(disambiguation_result.get('options', []))}",
+            error=f"DISAMBIGUATION_NEEDED:{disambiguation_result['keyword']}:{','.join(disambiguation_result.get('meanings', []))}",
         )
 
     # Get user_id from authenticated user or fall back to anonymous

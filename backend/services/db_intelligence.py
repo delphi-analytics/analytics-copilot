@@ -379,9 +379,9 @@ def build_sql_context_prompt(
     context: dict,
     question: str,
     relevant_tables: list[str] | None = None,
-    max_cols_per_table: int = 15,   # keep compact — only most useful columns
-    max_cat_values: int = 13,       # exact platform/category values only
-) -> str:
+    max_cols_per_table: int = 8,   # keep compact — only most useful columns
+    max_cat_values: int = 5,       # exact platform/category values only
+):
     """
     Convert the DB intelligence context into a COMPACT LLM-ready string.
     Stays well within model token limits by:

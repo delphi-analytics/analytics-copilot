@@ -311,7 +311,10 @@ export default function Sidebar({ isOpen, onToggle, onSessionChange }: SidebarPr
                     isActive={session.id === activeSessionId}
                     isExpanded={isOpen}
                     theme={theme}
-                    onSelect={() => loadSession(session.id)}
+                    onSelect={() => {
+                      onSessionChange?.()
+                      loadSession(session.id)
+                    }}
                     onTogglePin={() => togglePin(session.id)}
                     onDelete={() => setSessionToDelete(session.id)}
                   />
@@ -336,7 +339,10 @@ export default function Sidebar({ isOpen, onToggle, onSessionChange }: SidebarPr
                     isActive={session.id === activeSessionId}
                     isExpanded={isOpen}
                     theme={theme}
-                    onSelect={() => loadSession(session.id)}
+                    onSelect={() => {
+                      onSessionChange?.()
+                      loadSession(session.id)
+                    }}
                     onTogglePin={() => togglePin(session.id)}
                     onDelete={() => setSessionToDelete(session.id)}
                   />
@@ -573,10 +579,7 @@ function SidebarSessionItem({
       onMouseLeave={() => setShowActions(false)}
     >
       <button
-        onClick={() => {
-          onSessionChange?.()
-          loadSession(session.id)
-        }}
+        onClick={onSelect}
         className={`flex-1 flex items-center gap-2 min-w-0 ${
           isExpanded ? 'justify-start' : 'justify-center'
         }`}

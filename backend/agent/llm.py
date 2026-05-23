@@ -135,6 +135,9 @@ async def call_llm(
       "analysis" — smart 70B model (insights) — returns stub on total failure
       "general"  — same as sql
     """
+    # Force cold temperature for deterministic and fast responses
+    temperature = 0.0
+
     if model is None:
         model = settings.llm_fast_model if task == "routing" else settings.llm_smart_model
 
