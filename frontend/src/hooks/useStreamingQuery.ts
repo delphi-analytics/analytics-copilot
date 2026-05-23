@@ -17,10 +17,13 @@ export interface TransparencyStep {
     insights?: string[]
     key_metrics?: Record<string, string>
     viz_type?: string
+    tables?: string[]
   }
   result?: QueryResponse
   error?: string
   timestamp?: number
+  result?: QueryResponse
+  error?: string
 }
 
 export interface StreamingQueryOptions {

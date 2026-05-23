@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown'
 import { ChartRenderer } from '../Charts/ChartRenderer'
 import { indianiseCurrencyText, autoFormatValue } from '../../lib/formatters'
 import type { ChatMessage as ChatMessageType } from '../../store/chat'
+import { useAuthStore } from '../../store/auth'
 
 interface Props {
   message: ChatMessageType
@@ -15,6 +16,9 @@ interface Props {
 
 export const ChatMessageComponent: React.FC<Props> = ({ message, onFollowUp, onEdit, onDelete, theme = 'light' }) => {
   const [showSQL, setShowSQL] = useState(false)
+  const [showExplain, setShowExplain] = useState(false)
+  const { user } = useAuthStore()
+  const role = user?.role || 'team_member'
 
   if (message.role === 'user') {
     return (

@@ -16,6 +16,7 @@ from backend.agent.nodes import (
     analyst, viz_config, responder, general_llm, disambiguate
 )
 from backend.agent.nodes.insight_followup import handle_insight_followup, _is_insight_followup
+from backend.agent.nodes.general_llm import handle_general_query
 import structlog
 
 log = structlog.get_logger(__name__)
@@ -228,6 +229,7 @@ class StreamingGraphRunner:
             {
                 "generate_sql": "disambiguate",
                 "skip_to_respond": "compose_response",
+                "general_llm": "general_llm",
                 "insight_followup": "insight_followup",
                 "general_llm": "general_llm",
             }

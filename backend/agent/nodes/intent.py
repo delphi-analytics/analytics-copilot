@@ -51,7 +51,7 @@ async def understand_intent(state: AnalyticsState) -> AnalyticsState:
         f"{m['role'].upper()}: {m['content'][:250]}" for m in history
     ) if history else "None"
 
-    prompt = f"""You are classifying a data analytics question for an e-commerce beauty brand (Limese).
+    prompt = f"""You are classifying a data analytics question for a business database.
 
 Previous conversation:
 {history_text}
@@ -60,7 +60,7 @@ Current question: "{question}"
 
 Classify this question and return JSON only:
 {{
-  "type": "<chart_request|data_query|follow_up|analytical_question|insight_request|comparison|trend_analysis|export_request|greeting|conversational>",
+  "type": "<chart_request|data_query|follow_up|analytical_question|insight_request|comparison|trend_analysis|export_request|greeting|conversational|off_topic>",
   "chart_type_hint": "<bar|line|pie|scatter|heatmap|gauge|table|area|treemap|null>",
   "time_range": "<last_7_days|last_30_days|last_quarter|last_year|ytd|custom|null>",
   "aggregation": "<sum|count|avg|max|min|null>",
@@ -75,6 +75,7 @@ Classify this question and return JSON only:
 Rules:
 - greeting: Simple greetings like "hi", "hello", "gm", "good morning" — NO SQL needed, respond conversationally
 - conversational: "who are you", "what can you do", "how are you", "what are you doing", "help", "tell me about yourself" — respond conversationally about the assistant's capabilities
+- off_topic: Weather, general knowledge, time, news, sports, math, or anything clearly unrelated to the connected database — respond conversationally or answer concisely
 - chart_request: user explicitly wants a chart/graph/visualization
 - data_query: user wants to see/query data without specifying chart
 - analytical_question: "why is X", "explain X", "what caused X", "how is X" — needs data + narrative explanation
@@ -83,16 +84,16 @@ Rules:
 - comparison: comparing two things, periods, or categories
 - trend_analysis: wants to see changes over time
 - Chart Type Selection Rules:
-  * For trend/time series (e.g. monthly sales, daily order trends): hint `line` or `area`.
-  * For ranking/comparing distinct categories (e.g. sales by brand, brand performance): hint `bar`.
-  * For proportions/shares of a whole (e.g. platform share, brand contribution): hint `pie`.
-  * For conversion/customer journey stages: hint `funnel`.
-  * For multi-dimensional correlations (e.g. sales by day and hour): hint `heatmap`.
+  * For trend/time series (e.g. monthly values, daily trends): hint `line` or `area`.
+  * For ranking/comparing distinct categories (e.g. by group, by category): hint `bar`.
+  * For proportions/shares of a whole (e.g. share, contribution): hint `pie`.
+  * For conversion/journey stages: hint `funnel`.
+  * For multi-dimensional correlations: hint `heatmap`.
   * For a single KPI value or speed-style target: hint `gauge`.
 - IMPORTANT: For follow_up questions, make "rephrased_question" a COMPLETE standalone question
   that includes what "these", "that", "it", "them" refers to based on the conversation history.
-  Example: if last question was about Skincare vs Makeup revenue and user asks "compare with 2024",
-  rephrase as "Compare Skincare vs Makeup revenue by month in 2024 vs 2025"."""
+  Example: if last question was about Category A vs Category B and user asks "compare with last year",
+  rephrase as "Compare Category A vs Category B in the current year vs last year"."""
 
     try:
         resp = await call_llm(

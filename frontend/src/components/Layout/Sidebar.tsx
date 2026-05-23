@@ -9,6 +9,7 @@ import { useChatStore, ChatSession } from '../../store/chat'
 import { useAuthStore } from '../../store/auth'
 import { useThemeStore } from '../../store/theme'
 import { logout } from '../../api/auth'
+import { getDatasources } from '../../api/client'
 
 interface SidebarProps {
   isOpen: boolean

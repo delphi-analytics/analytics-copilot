@@ -28,7 +28,7 @@ export interface User {
   preferences: Record<string, unknown> | null
 }
 
-const authApi = axios.create({
+export const authApi = axios.create({
   baseURL: '/api/v1/auth',
   headers: { 'Content-Type': 'application/json' },
   withCredentials: true, // For cookies

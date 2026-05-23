@@ -2,6 +2,11 @@
 Minimal Pre-Filter for Intent Classification
 ONLY catches the most obvious patterns BEFORE LLM call.
 The LLM handles all actual classification - this just saves tokens for obvious cases.
+
+This module is deliberately minimal and contains NO hardcoded domain-specific
+responses (no brand names, no product categories, no platform names). All
+non-trivial classification is delegated to the LLM via the `general_llm` node,
+which dynamically inspects the active datasource schema.
 """
 from __future__ import annotations
 import re
@@ -146,3 +151,4 @@ def pre_classify(question: str) -> dict:
         "confidence": 0.5,
         "skip_llm": False,
     }
+

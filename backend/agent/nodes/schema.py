@@ -29,22 +29,56 @@ _TABLE_KEYWORDS: dict[str, list[str]] = {
 }
 
 
-def _keyword_select_tables(question: str, all_table_names: list[str]) -> list[str]:
-    """Fallback: pick tables by keyword matching the question."""
+import re
+
+def _keyword_select_tables(question: str, tables: list[dict]) -> list[str]:
+    """
+    Fallback: pick tables dynamically by matching keywords in the question
+    against table names, column names, descriptions, and Limese fallbacks.
+    """
     q = question.lower()
     selected = []
-    for tname in all_table_names:
-        kws = _TABLE_KEYWORDS.get(tname, [tname.lower().replace("_", " ")])
-        if any(kw in q for kw in kws):
+
+    # 1. Build keyword lists dynamically for all tables
+    for table in tables:
+        tname = table["name"]
+        tname_lower = tname.lower()
+
+        keywords = {tname_lower, tname_lower.replace("_", " "), tname_lower.replace("-", " ")}
+        # Add parts of table name
+        for part in re.split(r'[-_]', tname_lower):
+            if len(part) > 2:
+                keywords.add(part)
+
+        # Add column names
+        for col in table.get("columns", []):
+            cname = col.get("name", "").lower()
+            keywords.add(cname)
+            for part in re.split(r'[-_]', cname):
+                if len(part) > 2:
+                    keywords.add(part)
+
+        # Add table description keywords
+        desc = table.get("description", "").lower()
+        if desc:
+            for word in re.findall(r'\b\w{3,}\b', desc):
+                keywords.add(word)
+
+        if any(kw in q for kw in keywords):
             selected.append(tname)
-    # Always include the primary sales table for revenue/order queries
-    if not selected or ("revenue" in q or "sale" in q or "order" in q):
-        if "combined_sales_final" not in selected:
-            selected.insert(0, "combined_sales_final")
-    # Add product_master when products, categories are mentioned
-    if any(k in q for k in ["product", "item", "sku", "category", "skincare", "makeup"]):
-        if "product_master" not in selected:
-            selected.append("product_master")
+
+    # 2. Hardcoded fallback checks for Limese specifically (for backwards compatibility)
+    if not selected:
+        for table in tables:
+            tname = table["name"]
+            kws = _TABLE_KEYWORDS.get(tname, [])
+            if any(kw in q for kw in kws):
+                selected.append(tname)
+
+    # 3. Always ensure a default table is selected if list is empty
+    if not selected and tables:
+        selected.append(tables[0]["name"])
+
     return selected[:4]
 
 
@@ -122,12 +156,12 @@ Rules:
     except Exception as exc:
         log.warning("schema.llm_selection_failed", error=str(exc))
         # Smart keyword fallback instead of blind tables[:3]
-        selected_names = _keyword_select_tables(question, all_table_names)
+        selected_names = _keyword_select_tables(question, tables)
 
     # Validate — only keep table names that actually exist
     valid_names = [n for n in selected_names if n in all_table_names]
     if not valid_names:
-        valid_names = _keyword_select_tables(question, all_table_names)
+        valid_names = _keyword_select_tables(question, tables)
 
     # Enrich with full column metadata from the real schema
     table_map = {t["name"]: t for t in tables}
@@ -138,6 +172,8 @@ Rules:
             "name": name,
             "columns": full_table.get("columns", []),
             "sample_data": full_table.get("sample_data"),
+            "row_count": full_table.get("row_count"),
+            "description": full_table.get("description", ""),
         })
 
     schema_context = {
